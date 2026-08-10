@@ -2,7 +2,14 @@ use super::FieldAuditor;
 use crate::record::Record;
 use crate::verdict::{Context, Finding, Verdict, Why};
 
-/// Hash-chain continuity is not audited by anything yet.
+/// Chain continuity now HAS an auditor (`crate::chain`) — it is simply
+/// unreachable from a single record. `step_index`, `merkle_root`, and
+/// `chain_head` all describe a SEQUENCE property (contiguity, tree
+/// coverage, hash linkage), and one record alone cannot establish or
+/// contradict any of them; you need its neighbours. So this field auditor,
+/// which is what a single-record invocation always runs, stays UNCHECKED —
+/// but the reason now points at the mode that CAN check it, rather than
+/// claiming nothing exists.
 ///
 /// This ships and returns `UNCHECKED` on purpose. Omitting the row would make
 /// a report that looks complete; a gap you can see is worth more than a table
@@ -17,7 +24,9 @@ impl FieldAuditor for Chain {
         Finding {
             field: self.0,
             verdict: Verdict::Unchecked(Why::NoAuditor),
-            reason: "no auditor: chain continuity across records is unimplemented".into(),
+            reason: "a single record cannot establish chain continuity on its own; run \
+                     `poc-audit --chain <records...>` with its neighbours to audit the sequence"
+                .into(),
             residual: Vec::new(),
         }
     }

@@ -1,6 +1,6 @@
 use super::FieldAuditor;
 use crate::record::Record;
-use crate::verdict::{Context, Finding, Residual, Verdict, Why};
+use crate::verdict::{BackedBy, Context, Finding, Residual, Verdict, Why};
 
 /// Audits `submods.attestation`. One instance per field path, because the two
 /// required sub-fields fail differently: `platform` can be structurally
@@ -53,7 +53,110 @@ impl AttestationField {
         }
     }
 
+    /// `--reference-values` compared directly to `rec.submods.attestation.
+    /// measurement`. This is the only path that can ever reach ESTABLISHED
+    /// for this field: it is the one place something outside the record
+    /// actually reads the measurement and checks it against a value the
+    /// operator chose, rather than a value the record names.
+    ///
+    /// Independent of whether `reference_values_uri` is present — the record
+    /// naming a source and the operator supplying one are different claims,
+    /// and the reason text says which one is in play here.
+    fn measurement_against_reference_values(
+        &self,
+        rec: &Record,
+        ctx: &Context,
+        path: &std::path::Path,
+    ) -> Finding {
+        let rv = match crate::reference_values::ReferenceValues::load(path) {
+            Ok(rv) => rv,
+            Err(e) => {
+                return Finding {
+                    field: self.0,
+                    verdict: Verdict::Unchecked(Why::AuditorFailed(e.to_string())),
+                    reason: format!("could not use --reference-values {}: {e}", path.display()),
+                    residual: Vec::new(),
+                }
+            }
+        };
+        let source_note = if rec.submods.attestation.reference_values_uri.is_some() {
+            "the record names a reference source (reference_values_uri), but that URI is not \
+             fetched"
+        } else {
+            "the record does not name a reference source"
+        };
+        let measurement = &rec.submods.attestation.measurement;
+
+        if !rv.contains(measurement) {
+            return Finding {
+                field: self.0,
+                verdict: Verdict::Diverges,
+                reason: format!(
+                    "{source_note}; you supplied {} reference value(s) via --reference-values \
+                     and this record's measurement '{measurement}' is NOT among them: [{}]",
+                    rv.measurements.len(),
+                    rv.measurements.join(", "),
+                ),
+                residual: Vec::new(),
+            };
+        }
+
+        // The comparison itself holds. A deployment, if also supplied, adds
+        // an orthogonal residual (who must be honest for the reference
+        // values THEMSELVES to hold) that must survive alongside it.
+        let (residual, deployment_note) = match ctx.deployment.as_ref() {
+            None => (Vec::new(), String::new()),
+            Some(dp) => match parallax::deployment::Deployment::load(dp)
+                .map_err(|e| e.to_string())
+                .and_then(|d| parallax::solve::solve(&d).map_err(|e| e.to_string()))
+            {
+                Ok(set) => {
+                    let note = format!(
+                        "; the deployment also solves ({} principals would need to be honest \
+                         for the reference values themselves to hold)",
+                        set.0.len()
+                    );
+                    let residual = set
+                        .0
+                        .iter()
+                        .map(|a| Residual {
+                            principal: a.principal.clone(),
+                            capability: a.capability.clone(),
+                            detect: a.latency.label(),
+                            impact: impact_label(&a.impact).to_string(),
+                        })
+                        .collect();
+                    (residual, note)
+                }
+                Err(e) => {
+                    return Finding {
+                        field: self.0,
+                        verdict: Verdict::Unchecked(Why::AuditorFailed(e.clone())),
+                        reason: format!("parallax could not solve the deployment: {e}"),
+                        residual: Vec::new(),
+                    }
+                }
+            },
+        };
+
+        Finding {
+            field: self.0,
+            verdict: Verdict::Established(
+                BackedBy::new("--reference-values comparison").expect("non-empty literal"),
+            ),
+            reason: format!(
+                "{source_note}; you supplied {} reference value(s) via --reference-values and \
+                 this record's measurement '{measurement}' is among them{deployment_note}",
+                rv.measurements.len(),
+            ),
+            residual,
+        }
+    }
+
     fn measurement_finding(&self, rec: &Record, ctx: &Context) -> Finding {
+        if let Some(path) = ctx.reference_values.as_ref() {
+            return self.measurement_against_reference_values(rec, ctx, path);
+        }
         if rec.submods.attestation.reference_values_uri.is_none() {
             return Finding {
                 field: self.0,
@@ -159,6 +262,21 @@ mod tests {
         Record::parse(&v.to_string()).expect("fixture parses")
     }
 
+    /// A unique temp file per call: a fixed name would race under parallel
+    /// test execution, the same hazard `tests/exit_matrix.rs`'s
+    /// `unique_temp_path` documents.
+    fn write_reference_values(measurements: &[&str]) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("poc-audit-rv-{}-{nanos}.json", std::process::id()));
+        let body = serde_json::json!({ "measurements": measurements });
+        std::fs::write(&path, body.to_string()).expect("write reference values fixture");
+        path
+    }
+
     #[test]
     fn a_quote_without_reference_values_is_asserted_not_established() {
         let f = AttestationField("submods.attestation.measurement")
@@ -167,6 +285,123 @@ mod tests {
         assert!(
             f.reason.contains("compared to nothing"),
             "the reason must say what is missing, got: {}",
+            f.reason
+        );
+    }
+
+    /// The whole point of `--reference-values`: a file supplied, and the
+    /// record's measurement is IN it. This is the first time this auditor can
+    /// ever produce ESTABLISHED for `measurement` — everything else in this
+    /// file downgrades to ASSERTED or UNCHECKED precisely because nothing
+    /// used to compare the field to anything.
+    #[test]
+    fn measurement_in_the_supplied_reference_values_is_established() {
+        let rv_path = write_reference_values(&[
+            "sha-256:a1d0bdcf12b227dbe4347ce7a24a9a385a92369cd671fc1deaf9d2f7bb35cb81",
+        ]);
+        let ctx = Context {
+            reference_values: Some(rv_path.clone()),
+            ..Context::default()
+        };
+        let f = AttestationField("submods.attestation.measurement").audit(
+            &record_with("INTEL_TDX", Some("https://rv.example/v.json")),
+            &ctx,
+        );
+        let _ = std::fs::remove_file(&rv_path);
+        assert_eq!(f.verdict.label(), "ESTABLISHED", "reason was: {}", f.reason);
+        assert!(
+            f.reason.contains("--reference-values"),
+            "the reason must name what backs the comparison, got: {}",
+            f.reason
+        );
+    }
+
+    /// The highest-value output this tool can produce: a file was supplied,
+    /// and the record's measurement is NOT in it. Attested code that is not
+    /// the code you approved.
+    #[test]
+    fn measurement_absent_from_the_supplied_reference_values_diverges() {
+        let rv_path = write_reference_values(&[
+            "sha-256:0000000000000000000000000000000000000000000000000000000000000",
+        ]);
+        let ctx = Context {
+            reference_values: Some(rv_path.clone()),
+            ..Context::default()
+        };
+        let f = AttestationField("submods.attestation.measurement").audit(
+            &record_with("INTEL_TDX", Some("https://rv.example/v.json")),
+            &ctx,
+        );
+        let _ = std::fs::remove_file(&rv_path);
+        assert_eq!(f.verdict.label(), "DIVERGES", "reason was: {}", f.reason);
+        assert!(
+            f.reason
+                .contains("a1d0bdcf12b227dbe4347ce7a24a9a385a92369cd671fc1deaf9d2f7bb35cb81"),
+            "the reason must show the record's own measurement, got: {}",
+            f.reason
+        );
+        assert!(
+            f.reason
+                .contains("0000000000000000000000000000000000000000000000000000000000000"),
+            "the reason must show what was expected, got: {}",
+            f.reason
+        );
+    }
+
+    /// ESTABLISHED via `--reference-values` must not silently drop the
+    /// residual trust set when `--deployment` is also supplied — that
+    /// residual (who must be honest for the *deployment's* reference values
+    /// to hold) is orthogonal to, and still valuable alongside, the
+    /// operator's own comparison.
+    #[test]
+    fn established_by_reference_values_keeps_the_deployment_residual() {
+        let rv_path = write_reference_values(&[
+            "sha-256:a1d0bdcf12b227dbe4347ce7a24a9a385a92369cd671fc1deaf9d2f7bb35cb81",
+        ]);
+        let deployment = std::path::Path::new("tests/fixtures/parallax/sigma2-tdx.toml");
+        let ctx = Context {
+            reference_values: Some(rv_path.clone()),
+            deployment: Some(deployment.to_path_buf()),
+            ..Context::default()
+        };
+        let f = AttestationField("submods.attestation.measurement").audit(
+            &record_with("INTEL_TDX", Some("https://rv.example/v.json")),
+            &ctx,
+        );
+        let _ = std::fs::remove_file(&rv_path);
+        assert_eq!(f.verdict.label(), "ESTABLISHED", "reason was: {}", f.reason);
+        assert!(
+            !f.residual.is_empty(),
+            "the deployment's residual set must survive alongside the reference-values comparison"
+        );
+    }
+
+    /// The reason text must keep the record's claim ("a reference source is
+    /// named") distinct from the operator's own act of comparison ("you
+    /// supplied values and I compared"). Conflating them is the exact defect
+    /// this feature exists to remove.
+    #[test]
+    fn the_reason_distinguishes_the_records_claim_from_the_operators_comparison() {
+        let rv_path = write_reference_values(&[
+            "sha-256:a1d0bdcf12b227dbe4347ce7a24a9a385a92369cd671fc1deaf9d2f7bb35cb81",
+        ]);
+        let ctx = Context {
+            reference_values: Some(rv_path.clone()),
+            ..Context::default()
+        };
+        let f = AttestationField("submods.attestation.measurement").audit(
+            &record_with("INTEL_TDX", Some("https://rv.example/v.json")),
+            &ctx,
+        );
+        let _ = std::fs::remove_file(&rv_path);
+        assert!(
+            f.reason.contains("names a reference source"),
+            "must name the record's own claim separately, got: {}",
+            f.reason
+        );
+        assert!(
+            f.reason.contains("you supplied") || f.reason.contains("--reference-values"),
+            "must name the operator's own act of comparison separately, got: {}",
             f.reason
         );
     }

@@ -114,6 +114,11 @@ pub struct Context {
     pub deployment: Option<PathBuf>,
     pub payload: Option<String>,
     pub fleet: Option<PathBuf>,
+    /// The operator's own accepted-measurements file. See
+    /// `crate::reference_values::ReferenceValues`. Distinct from the
+    /// record's own `reference_values_uri`, which names a source but is
+    /// never fetched.
+    pub reference_values: Option<PathBuf>,
     /// Defaults to `Standard`. See `Profile`.
     pub profile: Profile,
 }
