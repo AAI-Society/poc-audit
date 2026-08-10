@@ -1,0 +1,15 @@
+# poc-audit depends on three git repositories (parallax, transit, occultation;
+# see Cargo.toml) that are genuinely public and anonymously cloneable — but
+# cargo's built-in libgit2 transport fails to authenticate against them with:
+#
+#   error: failed to authenticate when downloading repository
+#   * attempted to find username/password via git's `credential.helper` support,
+#     but failed
+#   if the git CLI succeeds then `net.git-fetch-with-cli` may help here
+#
+# That is cargo's own suggested fix, and it works: shelling out to the system
+# `git` binary instead of libgit2 fetches all three cleanly. Without this, a
+# cold cache — exactly what a fresh CI runner has — fails `cargo build`/`cargo
+# test` on the very first run, with no local warm cache to mask the problem.
+[net]
+git-fetch-with-cli = true
