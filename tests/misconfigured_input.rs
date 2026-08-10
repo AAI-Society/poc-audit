@@ -18,10 +18,15 @@ fn an_unreadable_deployment_is_an_error_not_an_unchecked_row() {
 
     assert_eq!(out.status.code(), Some(2), "a bad --deployment must exit 2");
 
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    // This early-return error path never reaches `render_table`, so stdout
+    // is empty — not merely free of the substring "UNCHECKED", which an
+    // empty string is trivially and unfalsifiably free of. Assert the real
+    // property: nothing was printed on the path where a real report would
+    // be everything that follows.
     assert!(
-        !stdout.contains("UNCHECKED"),
-        "a bad --deployment produced a report instead of an error:\n{stdout}"
+        out.stdout.is_empty(),
+        "a bad --deployment must print nothing to stdout, got:\n{}",
+        String::from_utf8_lossy(&out.stdout)
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -43,10 +48,13 @@ fn an_unreadable_payload_is_an_error_not_an_unchecked_row() {
 
     assert_eq!(out.status.code(), Some(2), "a bad --payload must exit 2");
 
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    // See the matching comment on the --deployment test above: the real,
+    // falsifiable property on this early-return path is an empty stdout, not
+    // an unfalsifiable substring check on what could be an empty string.
     assert!(
-        !stdout.contains("UNCHECKED"),
-        "a bad --payload produced a report instead of an error:\n{stdout}"
+        out.stdout.is_empty(),
+        "a bad --payload must print nothing to stdout, got:\n{}",
+        String::from_utf8_lossy(&out.stdout)
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -70,9 +78,11 @@ fn an_unreadable_fleet_is_an_error_not_an_unchecked_row() {
         .expect("run poc-audit");
 
     assert_eq!(out.status.code(), Some(2), "a bad --fleet must exit 2");
+    // See the matching comment on the --deployment test above.
     assert!(
-        !String::from_utf8_lossy(&out.stdout).contains("UNCHECKED"),
-        "a bad --fleet produced a report instead of an error"
+        out.stdout.is_empty(),
+        "a bad --fleet must print nothing to stdout, got:\n{}",
+        String::from_utf8_lossy(&out.stdout)
     );
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("/nonexistent/fleet.toml"),

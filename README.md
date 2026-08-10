@@ -71,10 +71,17 @@ existing formats — there is no fourth config language.
 
 | flag | deepens | format |
 | --- | --- | --- |
-| `--deployment` | `submods.attestation.*` | a `parallax` deployment |
+| `--deployment` | `submods.attestation.measurement` | a `parallax` deployment |
 | `--payload` | `poc_claims.canonical_snapshot_hash` | the raw request bytes |
-| `--fleet` | `poc_claims.agent_id` | an `occultation` fleet |
+| `--fleet` | `poc_claims.agent_id`, `poc_claims.initiating_user` | an `occultation` fleet |
 | `--profile` | `poc_claims.agent_id` | `standard` (default) or `unlinkable` |
+
+`--deployment` deepens only `submods.attestation.measurement`, not
+`submods.attestation.platform` — the platform row asserts the record's own
+claim and is byte-identical whether or not `--deployment` is supplied; only
+`measurement` reads it. `--fleet` deepens both identity rows, not only
+`agent_id`: `initiating_user` goes through the same `Identity` auditor and
+picks up the same anonymity-set figures.
 
 `--profile` is the one input that can *reverse* a verdict rather than deepen
 it. A persistent `agent_id` satisfies C5.1.1 under `standard` and cannot hold
@@ -95,12 +102,19 @@ be honest, what they could do, and how long before you would know.
 
 `--require-checked` is the CI gate for "no field is waiting on an input you
 could supply." It fails only on `UNCHECKED` rows caused by a missing flag —
-`--deployment`, `--payload`, or `--fleet` not given for a field that has an
-auditor — not on rows with no auditor at all (chain continuity, AgBOM, and
-the rest of `registry::ACCOUNTED`'s `Coverage::Unaudited` entries). Those
-cannot be turned into anything else by any invocation of this tool, so gating
-on them would leave the flag permanently red on every record. It changes only
-the exit code; the report is byte-identical.
+`--deployment` or `--payload` not given for a field that has an auditor — not
+on rows with no auditor at all (chain continuity, AgBOM, and the rest of
+`registry::ACCOUNTED`'s `Coverage::Unaudited` entries). Those cannot be turned
+into anything else by any invocation of this tool, so gating on them would
+leave the flag permanently red on every record. It changes only the exit
+code; the report is byte-identical.
+
+`--fleet` is not part of this list: its two rows (`agent_id`,
+`initiating_user`) are never `UNCHECKED` for lack of it — they resolve to
+`ESTABLISHED` or `CANNOT HOLD` from the record and `--profile` alone, and
+`--fleet`'s absence only shortens the reason text ("Supply --fleet for the
+anonymity-set size") rather than leaving the row waiting. `--require-checked`
+therefore cannot be made to fire on a missing `--fleet`.
 
 ## What this does not do
 

@@ -76,3 +76,40 @@ fn a_record_missing_a_required_claim_is_an_error() {
         "the error must name the missing field, got: {err}"
     );
 }
+
+/// The test above proves only that removing `chain_head` is rejected, so a
+/// change to `PocClaims` that silently made some OTHER required field
+/// optional (a stray `#[serde(default)]`, a typo'd field name) would ship
+/// undetected. Read the schema's own `$defs.pocClaims.required` list — the
+/// source of truth `coverage.rs`'s `every_required_field_is_accounted_for`
+/// also reads — and assert removing EACH one, one at a time, is rejected.
+#[test]
+fn removing_any_required_poc_claim_is_rejected() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/poc-evidence.schema.json"))
+            .expect("vendored schema is json");
+    let required = schema["$defs"]["pocClaims"]["required"]
+        .as_array()
+        .expect("pocClaims required is an array");
+    assert!(
+        required.len() > 10,
+        "the schema parse found almost nothing: {required:?}"
+    );
+
+    let base: serde_json::Value =
+        serde_json::from_str(&read("positive")[0].1).expect("positive vector is json");
+    for entry in required {
+        let field = entry.as_str().expect("required entry is a string");
+        let mut v = base.clone();
+        v["poc_claims"]
+            .as_object_mut()
+            .expect("claims object")
+            .remove(field);
+        let err = poc_audit::record::Record::parse(&v.to_string())
+            .expect_err(&format!("a record missing {field} must not parse"));
+        assert!(
+            err.to_string().contains(field),
+            "the error must name the missing field {field}, got: {err}"
+        );
+    }
+}

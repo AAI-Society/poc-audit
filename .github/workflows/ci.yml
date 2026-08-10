@@ -57,3 +57,30 @@ jobs:
               exit 1
             fi
           done
+
+      # The positive-vector step above never produces exit 2, so nothing
+      # committed exercises the "could not audit this at all" branch. These
+      # three negative vectors are malformed in ways layer 4 catches on its
+      # own (a required claim missing, a float where the schema forbids one,
+      # a duplicate JSON key) rather than ways that merely fail a residual
+      # check, so this tool genuinely cannot audit them and must say so with
+      # exit 2, not report DIVERGES/CANNOT HOLD on a record it never parsed.
+      - name: exit 2 is reachable on committed data, not only by reasoning
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in \
+            tests/fixtures/vectors/negative/missing-policy-bundle-hash.json \
+            tests/fixtures/vectors/negative/float-timestamp.json \
+            tests/fixtures/vectors/negative/duplicate-key.json \
+          ; do
+            echo "--- $f"
+            set +e
+            cargo run --quiet -- "$f"
+            code=$?
+            set -e
+            if [ "$code" -ne 2 ]; then
+              echo "::error::$f was expected to exit 2 (unauditable input) but exited $code"
+              exit 1
+            fi
+          done

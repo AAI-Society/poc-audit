@@ -1,0 +1,7 @@
+# Loads (a bare `name` is valid TOML; `host` defaults to an empty list) but
+# declares no hosts, so `occultation::anonymity::partition` fails with
+# `EmptyFleet` after the CLI's load-only `--fleet` pre-check has already
+# passed `Fleet::load`. This is the real path from "loads fine" to exit 2:
+# an auditor that fails after the strict pre-check, driven through the
+# actual binary rather than only a synthetic `Finding` in a unit test.
+name = "empty-fleet"

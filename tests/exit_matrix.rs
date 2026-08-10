@@ -5,6 +5,24 @@ fn bin() -> Command {
 }
 const GOOD: &str = "tests/fixtures/vectors/positive/hardware-attested.json";
 
+/// A unique path per call, not a fixed name — a fixed `/tmp` path is
+/// hazardous under parallel test execution (cargo runs tests in the same
+/// binary concurrently by default) or a shared runner: two tests, or two
+/// concurrent CI jobs, writing and reading the same path race each other.
+/// Includes the caller-supplied name for a readable leftover file if a test
+/// panics before cleanup, the process id to separate concurrent processes,
+/// and a nanosecond timestamp to separate concurrent threads within one.
+fn unique_temp_path(name: &str) -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock is after the epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "poc-audit-{name}-{}-{nanos}.json",
+        std::process::id()
+    ))
+}
+
 /// A conformant record under the default profile has nothing that DIVERGES
 /// and nothing that CANNOT HOLD, so it exits 0. If this ever exits 1, an
 /// auditor is reporting a failure on a record that has none — the false
@@ -34,8 +52,15 @@ fn the_same_record_exits_1_once_an_unlinkable_profile_is_declared() {
     assert_eq!(out.status.code(), Some(1));
 }
 
-/// UNCHECKED rows exist in the default run (chain, canonical), so the CI gate
-/// must bite on a record that otherwise passes.
+/// Gate-relevant UNCHECKED rows exist in the default run: `submods.
+/// attestation.measurement` (no `--deployment`) and `poc_claims.
+/// canonical_snapshot_hash` (no `--payload`) are both `Unchecked(Why::
+/// MissingInput(_))`, so the CI gate must bite on a record that otherwise
+/// exits 0. The chain rows (`chain_head`, `merkle_root`, `step_index`) are
+/// UNCHECKED too, but via `Why::NoAuditor`, which `--require-checked`
+/// deliberately excludes — see `verdict::Verdict::is_unchecked_missing_
+/// input` — so they are not why this test's `strict` run fails; naming them
+/// here would be stale the moment chain continuity gets an auditor.
 #[test]
 fn require_checked_turns_a_clean_record_into_a_failure() {
     assert_eq!(
@@ -67,8 +92,10 @@ fn require_checked_does_not_change_the_report_only_the_code() {
 
 #[test]
 fn a_malformed_record_exits_2() {
-    std::fs::write("/tmp/poc-audit-bad.json", "{}").expect("write");
-    let out = bin().arg("/tmp/poc-audit-bad.json").output().expect("run");
+    let path = unique_temp_path("malformed-record");
+    std::fs::write(&path, "{}").expect("write");
+    let out = bin().arg(&path).output().expect("run");
+    let _ = std::fs::remove_file(&path);
     assert_eq!(out.status.code(), Some(2));
 }
 
@@ -95,6 +122,41 @@ fn an_auditor_failure_outranks_everything_and_exits_2() {
         poc_audit::report::exit_code(&findings, false),
         2,
         "a failed auditor must outrank a divergence: the report is incomplete"
+    );
+}
+
+/// The real path to exit 2 via a failed auditor, not only the synthetic
+/// `Finding` list above. `--fleet`'s CLI pre-check only calls
+/// `occultation::anonymity::Fleet::load`, which just parses TOML — a fleet
+/// declaring no hosts loads fine and passes that check, then fails inside
+/// `Identity`'s audit when `occultation::anonymity::partition` runs on it.
+/// Before this test, that whole path — pre-check passes, auditor fails,
+/// process exits 2, row says why — was exercised by nothing.
+#[test]
+fn a_fleet_that_loads_but_cannot_partition_drives_a_real_exit_2() {
+    let out = bin()
+        .arg(GOOD)
+        .arg("--fleet")
+        .arg("tests/fixtures/occultation/fleet-empty.toml")
+        .output()
+        .expect("run");
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("poc_claims.agent_id") && stdout.contains("UNCHECKED"),
+        "the row must still be printed, naming the field: {stdout}"
+    );
+    assert!(
+        stdout.contains("could not partition the fleet"),
+        "the row must say the auditor failed, not just UNCHECKED, got:\n{stdout}"
     );
 }
 
@@ -165,20 +227,13 @@ fn require_checked_can_exit_0_with_every_deepening_input_supplied() {
     );
 }
 
-/// The other direction: with a deepening input missing (here, no
-/// `--deployment`, so `submods.attestation.measurement` stays
-/// `Unchecked(Why::MissingInput("--deployment"))`), the gate must still
-/// fail. Without this, scoping the gate to `Why::MissingInput` could have
-/// been implemented by excluding everything and the gate would never bite.
-#[test]
-fn require_checked_still_exits_1_when_a_deepening_input_is_missing() {
-    let out = bin()
-        .arg(GOOD)
-        .arg("--require-checked")
-        .output()
-        .expect("run");
-    assert_eq!(out.status.code(), Some(1));
-}
+// `require_checked_still_exits_1_when_a_deepening_input_is_missing` used to
+// live here. Its body was byte-identical to `require_checked_turns_a_clean_
+// record_into_a_failure`'s `strict` half — both just ran GOOD with
+// `--require-checked` and asserted exit 1 — so it added no coverage beyond
+// what that test's updated docstring above now explains directly. Merged
+// away rather than left as a second copy of the same assertion under a
+// different name.
 
 #[test]
 fn a_clean_set_of_findings_exits_0() {
