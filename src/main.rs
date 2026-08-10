@@ -20,11 +20,15 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match poc_audit::record::Record::parse(&src) {
-        Ok(_) => ExitCode::SUCCESS,
+    let rec = match poc_audit::record::Record::parse(&src) {
+        Ok(r) => r,
         Err(e) => {
             eprintln!("error: {e}");
-            ExitCode::from(2)
+            return ExitCode::from(2);
         }
-    }
+    };
+    let ctx = poc_audit::verdict::Context::default();
+    let findings = poc_audit::registry::run(&rec, &ctx);
+    print!("{}", poc_audit::report::render_table(&findings));
+    ExitCode::from(poc_audit::report::exit_code(&findings, false))
 }
