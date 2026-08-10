@@ -1,6 +1,7 @@
 pub mod attestation;
 pub mod canonical;
 pub mod chain;
+pub mod identity;
 
 use crate::record::Record;
 use crate::verdict::{Context, Finding};

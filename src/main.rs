@@ -22,6 +22,16 @@ struct Cli {
     /// decoder configuration is needed: transit runs every model it can find.
     #[arg(long)]
     payload: Option<PathBuf>,
+
+    /// An occultation fleet description, for the anonymity-set size.
+    #[arg(long)]
+    fleet: Option<PathBuf>,
+
+    /// The identity profile in force. A persistent agent_id satisfies C5.1.1
+    /// under `standard` and cannot hold under `unlinkable`. Not inferred from
+    /// the record, because the record does not say.
+    #[arg(long, value_enum, default_value_t = poc_audit::verdict::Profile::Standard)]
+    profile: poc_audit::verdict::Profile,
 }
 
 fn main() -> ExitCode {
@@ -49,6 +59,12 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     }
+    if let Some(p) = cli.fleet.as_ref() {
+        if let Err(e) = occultation::anonymity::Fleet::load(p) {
+            eprintln!("error: cannot use --fleet {}: {e}", p.display());
+            return ExitCode::from(2);
+        }
+    }
     let payload = match cli.payload.as_ref() {
         None => None,
         Some(p) => match std::fs::read_to_string(p) {
@@ -62,7 +78,8 @@ fn main() -> ExitCode {
     let ctx = poc_audit::verdict::Context {
         deployment: cli.deployment.clone(),
         payload,
-        ..Default::default()
+        fleet: cli.fleet.clone(),
+        profile: cli.profile,
     };
     let findings = poc_audit::registry::run(&rec, &ctx);
     print!("{}", poc_audit::report::render_table(&findings));

@@ -37,17 +37,8 @@ pub const ACCOUNTED: &[(&str, Coverage)] = &[
         "submods",
         Coverage::Unaudited("audited through submods.attestation.*"),
     ),
-    // Flipped to Coverage::Audited by the task that adds the auditor. A field
-    // marked Audited with no auditor claiming it panics `run` by design, so
-    // these two facts must move together, in one commit, every time.
-    (
-        "poc_claims.agent_id",
-        Coverage::Unaudited("identity auditor arrives in Task 5"),
-    ),
-    (
-        "poc_claims.initiating_user",
-        Coverage::Unaudited("identity auditor arrives in Task 5"),
-    ),
+    ("poc_claims.agent_id", Coverage::Audited),
+    ("poc_claims.initiating_user", Coverage::Audited),
     ("poc_claims.canonical_snapshot_hash", Coverage::Audited),
     ("poc_claims.chain_head", Coverage::Audited),
     ("poc_claims.merkle_root", Coverage::Audited),
@@ -101,6 +92,10 @@ pub fn auditors() -> Vec<Box<dyn FieldAuditor>> {
             "submods.attestation.measurement",
         )),
         Box::new(crate::field::canonical::Canonical),
+        Box::new(crate::field::identity::Identity("poc_claims.agent_id")),
+        Box::new(crate::field::identity::Identity(
+            "poc_claims.initiating_user",
+        )),
     ]
 }
 
