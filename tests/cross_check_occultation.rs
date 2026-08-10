@@ -60,3 +60,46 @@ fn our_anonymity_figures_are_occultation_s_own() {
         );
     }
 }
+
+/// The same check against a fleet whose figures do not collide.
+///
+/// `fleet-drifted` has `min_set == singletons == 1`, so swapping those two
+/// fields in the reason produces identical text and cannot be detected by any
+/// assertion over that string. `fleet-uniform` has `min_set 120, singletons 0`
+/// — distinct, so the swap fails here. This test exists for exactly that
+/// mutation and for no other reason.
+#[test]
+fn the_figures_are_distinguishable_on_a_fleet_whose_values_differ() {
+    let path = std::path::Path::new("tests/fixtures/occultation/fleet-uniform.toml");
+    let fleet = occultation::anonymity::Fleet::load(path).expect("fixture loads");
+    let upstream = occultation::anonymity::partition(&fleet).expect("fixture partitions");
+
+    assert_ne!(
+        upstream.min_set, upstream.singletons,
+        "this fixture is only useful while its figures differ; it now collides \
+         like fleet-drifted and cannot catch the swap it exists to catch"
+    );
+
+    let rec = Record::parse(include_str!(
+        "fixtures/vectors/positive/hardware-attested.json"
+    ))
+    .expect("fixture parses");
+    let ctx = Context {
+        fleet: Some(path.to_path_buf()),
+        ..Default::default()
+    };
+    let f = Identity("poc_claims.agent_id").audit(&rec, &ctx);
+
+    assert!(
+        f.reason
+            .contains(&format!("smallest anonymity set {}", upstream.min_set)),
+        "min_set is not rendered as its own value: {}",
+        f.reason
+    );
+    assert!(
+        f.reason
+            .contains(&format!("{} singletons", upstream.singletons)),
+        "singletons is not rendered as its own value: {}",
+        f.reason
+    );
+}
