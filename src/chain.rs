@@ -47,7 +47,22 @@ pub fn load_chain(paths: &[PathBuf]) -> Result<Vec<ChainRecord>, String> {
 /// Every chain-continuity finding for the sequence. Five rows, mirroring the
 /// single-record table's shape so the same `report::render_table` and
 /// `report::exit_code` apply unchanged.
+///
+/// # Panics
+///
+/// Panics if `records` is empty. The CLI guarantees this never happens
+/// (`--chain`'s `num_args = 2..` rejects fewer than two files before this
+/// function is ever reached), but this is a `pub` entry point reachable from
+/// outside the CLI, so the precondition is asserted explicitly here — with a
+/// message that says what went wrong — rather than left to surface later as
+/// a bare index-out-of-bounds panic inside `audit_agent_id` or
+/// `audit_step_index`.
 pub fn audit(records: &[ChainRecord]) -> Vec<Finding> {
+    assert!(
+        !records.is_empty(),
+        "chain::audit requires at least one record; callers must guarantee this \
+         (the CLI does via --chain's num_args = 2..)"
+    );
     vec![
         audit_agent_id(records),
         audit_step_index(records),
@@ -75,8 +90,23 @@ fn diverges(field: &'static str, reason: String) -> Finding {
     }
 }
 
+fn asserted(field: &'static str, reason: String) -> Finding {
+    Finding {
+        field,
+        verdict: Verdict::Asserted,
+        reason,
+        residual: Vec::new(),
+    }
+}
+
 /// "A chain of records from different agents is not a chain." All records
 /// must share one `agent_id`.
+///
+/// M6: a *shared* value that is itself empty must not ESTABLISH — the
+/// single-record path (`field/identity.rs`) treats an empty identifier as
+/// ASSERTED ("the auditor looked and found nothing behind the claim"), and
+/// chain mode must agree, not reward the identical absence of an identifier
+/// with a stronger verdict merely because it repeats across records.
 fn audit_agent_id(records: &[ChainRecord]) -> Finding {
     let first = &records[0].record.poc_claims.agent_id;
     let mismatches: Vec<String> = records
@@ -91,41 +121,60 @@ fn audit_agent_id(records: &[ChainRecord]) -> Finding {
             )
         })
         .collect();
-    if mismatches.is_empty() {
-        established(
-            "poc_claims.agent_id",
-            "shared agent_id across the supplied records",
-            format!(
-                "all {} supplied records share agent_id '{first}'",
-                records.len()
-            ),
-        )
-    } else {
-        diverges(
+    if !mismatches.is_empty() {
+        return diverges(
             "poc_claims.agent_id",
             format!(
                 "the supplied records do not share one agent_id: {} has '{first}', but {}",
                 records[0].path.display(),
                 mismatches.join("; ")
             ),
-        )
+        );
     }
+    if first.trim().is_empty() {
+        return asserted(
+            "poc_claims.agent_id",
+            format!(
+                "all {} supplied records share an empty agent_id; there is no identifier to \
+                 assess",
+                records.len()
+            ),
+        );
+    }
+    established(
+        "poc_claims.agent_id",
+        "shared agent_id across the supplied records",
+        format!(
+            "all {} supplied records share agent_id '{first}'",
+            records.len()
+        ),
+    )
 }
 
 /// The schema's own words: "Monotonic per agent, starting at 0, with no
-/// gaps." A single pass checking `records[i].step_index == i` catches gaps,
-/// duplicates, AND reordering in one shot — any of those makes some position
-/// disagree with its expected index.
+/// gaps." But `--chain` may legitimately be handed a *window* of a longer
+/// chain — a contiguous, agent-consistent subsequence with earlier records
+/// simply omitted from the command line (documented in the README's "what
+/// this does not do") — and that window does not start at 0. Contiguity and
+/// "starts at genesis" are two different properties: this checks only the
+/// first, relative to whatever `records[0].step_index` actually is, so a
+/// window like 5, 6, 7 establishes exactly like 0, 1, 2. A single pass
+/// checking `records[i].step_index == records[0].step_index + i` still
+/// catches gaps, duplicates, AND reordering in one shot — any of those makes
+/// some position disagree with its expected index — without also flagging a
+/// conformant non-zero start as a false DIVERGES.
 fn audit_step_index(records: &[ChainRecord]) -> Finding {
+    let base = records[0].record.poc_claims.step_index;
     let problems: Vec<String> = records
         .iter()
         .enumerate()
-        .filter(|(i, r)| r.record.poc_claims.step_index != *i as u64)
+        .filter(|(i, r)| r.record.poc_claims.step_index != base + *i as u64)
         .map(|(i, r)| {
             format!(
-                "{} has step_index {} at position {i} (expected {i})",
+                "{} has step_index {} at position {i} (expected {})",
                 r.path.display(),
-                r.record.poc_claims.step_index
+                r.record.poc_claims.step_index,
+                base + i as u64
             )
         })
         .collect();
@@ -134,9 +183,9 @@ fn audit_step_index(records: &[ChainRecord]) -> Finding {
             "poc_claims.step_index",
             "step_index contiguity across the supplied records",
             format!(
-                "step_index runs 0..{} across the {} supplied records, in order, with no gaps, \
-                 duplicates, or reordering",
-                records.len() - 1,
+                "step_index runs contiguously from {base} to {} across the {} supplied \
+                 records, in order, with no gaps, duplicates, or reordering",
+                base + records.len() as u64 - 1,
                 records.len()
             ),
         )
@@ -144,7 +193,8 @@ fn audit_step_index(records: &[ChainRecord]) -> Finding {
         diverges(
             "poc_claims.step_index",
             format!(
-                "step_index is not the contiguous 0..N sequence the schema requires: {}",
+                "step_index is not a contiguous run starting at {base} (its own first \
+                 record's value) the way a single sequence requires: {}",
                 problems.join("; ")
             ),
         )
@@ -391,6 +441,27 @@ mod tests {
         assert_eq!(f.verdict.label(), "DIVERGES", "reason was: {}", f.reason);
     }
 
+    /// M6: an empty `agent_id` shared by every record must not ESTABLISH —
+    /// the single-record path (`field/identity.rs`) treats an empty
+    /// identifier as ASSERTED ("we looked and found nothing"), and chain
+    /// mode must agree rather than reward the identical data with a
+    /// stronger verdict just because it repeats across records.
+    #[test]
+    fn a_shared_empty_agent_id_is_asserted_not_established() {
+        let records = vec![
+            at("0.json", 0, 1, "", "sha-256:h0"),
+            at("1.json", 1, 2, "", "sha-256:h1"),
+        ];
+        let findings = audit(&records);
+        let f = find(&findings, "poc_claims.agent_id");
+        assert_eq!(f.verdict.label(), "ASSERTED", "reason was: {}", f.reason);
+        assert!(
+            f.reason.contains("empty"),
+            "the reason must say the field is empty, got: {}",
+            f.reason
+        );
+    }
+
     /// Reordering: the sequence 0, 2, 1 given in that order — a duplicate or
     /// gap check alone would not catch this; the positional check does.
     #[test]
@@ -489,6 +560,41 @@ mod tests {
         assert!(f.reason.contains("sha-256:same"), "got: {}", f.reason);
     }
 
+    /// C1: a contiguous window of a longer chain that does NOT start at
+    /// step_index 0 (steps 5, 6, 7 — contiguous, in order, one agent,
+    /// distinct heads) must ESTABLISH, not DIVERGE. The old check
+    /// (`step_index == position`) conflated contiguity with "starts at
+    /// genesis", so any such window failed with a factually false reason.
+    #[test]
+    fn a_non_zero_start_chain_is_contiguous_not_diverges() {
+        let records = vec![
+            at(
+                "5.json",
+                5,
+                6,
+                "did:web:example.org:agents:ref-1",
+                "sha-256:h5",
+            ),
+            at(
+                "6.json",
+                6,
+                7,
+                "did:web:example.org:agents:ref-1",
+                "sha-256:h6",
+            ),
+            at(
+                "7.json",
+                7,
+                8,
+                "did:web:example.org:agents:ref-1",
+                "sha-256:h7",
+            ),
+        ];
+        let findings = audit(&records);
+        let f = find(&findings, "poc_claims.step_index");
+        assert_eq!(f.verdict.label(), "ESTABLISHED", "reason was: {}", f.reason);
+    }
+
     #[test]
     fn load_chain_reads_every_file_in_the_order_given() {
         let paths = vec![
@@ -504,5 +610,18 @@ mod tests {
         let paths = vec![PathBuf::from("/nonexistent/record.json")];
         let err = load_chain(&paths).expect_err("must fail");
         assert!(err.contains("/nonexistent/record.json"), "got: {err}");
+    }
+
+    /// M8: `audit(&[])` is unreachable from the CLI — clap's `num_args = 2..`
+    /// on `--chain` guarantees at least two records — but this is a `pub`
+    /// entry point with no documented precondition, and without one it
+    /// panics deep inside `audit_agent_id`/`audit_step_index` with a bare
+    /// "index out of bounds", which tells a future caller nothing about
+    /// what went wrong. The precondition must be explicit and the panic
+    /// message must say why.
+    #[test]
+    #[should_panic(expected = "chain::audit requires at least one record")]
+    fn audit_of_an_empty_slice_panics_with_a_documented_precondition() {
+        audit(&[]);
     }
 }

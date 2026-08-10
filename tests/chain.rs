@@ -36,6 +36,29 @@ fn a_valid_chain_exits_0() {
     assert!(head_row.contains("UNCHECKED"), "got: {head_row}");
 }
 
+/// C1: a contiguous window of a longer chain that does not start at
+/// step_index 0 — steps 5, 6, 7, one agent, distinct heads — must ESTABLISH
+/// step_index, not DIVERGE. This is the exact scenario the README documents
+/// under "what this does not do" ("a contiguous, agent-consistent
+/// subsequence ... passes exactly like a complete one"): the old check
+/// (`step_index == position`) conflated contiguity with "starts at
+/// genesis" and produced a false DIVERGES on this conformant input.
+#[test]
+fn a_non_zero_start_chain_establishes_step_index_and_exits_0() {
+    let out = bin()
+        .arg("--chain")
+        .args(chain("non-zero-start", 3))
+        .output()
+        .expect("run poc-audit");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let row = stdout
+        .lines()
+        .find(|l| l.starts_with("poc_claims.step_index"))
+        .unwrap_or_else(|| panic!("no step_index row in:\n{stdout}"));
+    assert!(row.contains("ESTABLISHED"), "got: {row}");
+    assert_eq!(out.status.code(), Some(0), "stdout:\n{stdout}");
+}
+
 /// A gap (step_index 0, 1, 3) must DIVERGE on step_index and exit 1.
 #[test]
 fn a_gap_in_step_index_diverges_and_exits_1() {
