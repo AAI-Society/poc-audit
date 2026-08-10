@@ -23,9 +23,13 @@ pub const ACCOUNTED: &[(&str, Coverage)] = &[
     ("poc_claims",  Coverage::Unaudited("audited through its individual claims")),
     ("submods",     Coverage::Unaudited("audited through submods.attestation.*")),
 
-    ("poc_claims.agent_id",                Coverage::Audited),
-    ("poc_claims.initiating_user",         Coverage::Audited),
-    ("poc_claims.canonical_snapshot_hash", Coverage::Audited),
+    // Flipped to Coverage::Audited by the task that adds the auditor. A field
+    // marked Audited with no auditor claiming it panics `run` by design, so
+    // these two facts must move together, in one commit, every time.
+    ("poc_claims.agent_id",                Coverage::Unaudited("identity auditor arrives in Task 5")),
+    ("poc_claims.initiating_user",         Coverage::Unaudited("identity auditor arrives in Task 5")),
+    ("poc_claims.canonical_snapshot_hash", Coverage::Unaudited("canonical auditor arrives in Task 4")),
+
     ("poc_claims.chain_head",              Coverage::Audited),
     ("poc_claims.merkle_root",             Coverage::Audited),
     ("poc_claims.step_index",              Coverage::Audited),
@@ -39,8 +43,8 @@ pub const ACCOUNTED: &[(&str, Coverage)] = &[
     ("poc_claims.verdict",            Coverage::Unaudited("enumerated value, checked by validate.py")),
     ("poc_claims.alg",                Coverage::Unaudited("signature checking is validate.py's semantic layer")),
 
-    ("submods.attestation.platform",    Coverage::Audited),
-    ("submods.attestation.measurement", Coverage::Audited),
+    ("submods.attestation.platform",    Coverage::Unaudited("attestation auditor arrives in Task 3")),
+    ("submods.attestation.measurement", Coverage::Unaudited("attestation auditor arrives in Task 3")),
 ];
 
 /// Every auditor. Later tasks push onto this list.
