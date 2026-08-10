@@ -29,6 +29,18 @@ pub enum ReferenceValuesError {
     Io(std::io::Error),
     #[error("not valid JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// An empty `measurements` array is not "the operator approved nothing
+    /// running" — it means there is no second party to disagree with, so
+    /// comparing against it can only ever fabricate a DIVERGES. Most likely
+    /// causes are a templating step that emptied the file or a `jq` filter
+    /// that matched nothing; either way this is malformed input, not a real
+    /// empty approval list.
+    #[error(
+        "measurements is empty; an empty reference-values file approves nothing, so every \
+         record would DIVERGE against it — this is treated as malformed input, not a real \
+         (empty) approval list"
+    )]
+    Empty,
 }
 
 impl From<std::io::Error> for ReferenceValuesError {
@@ -41,6 +53,9 @@ impl ReferenceValues {
     pub fn load(path: &Path) -> Result<Self, ReferenceValuesError> {
         let s = std::fs::read_to_string(path)?;
         let rv: ReferenceValues = serde_json::from_str(&s)?;
+        if rv.measurements.is_empty() {
+            return Err(ReferenceValuesError::Empty);
+        }
         Ok(rv)
     }
 
@@ -79,5 +94,28 @@ mod tests {
         let err = ReferenceValues::load(&path).expect_err("must not parse");
         let _ = std::fs::remove_file(&path);
         assert!(err.to_string().contains("not valid JSON"));
+    }
+
+    /// I3: `{"measurements": []}` is not "the operator approved nothing";
+    /// there is no second party to disagree with an empty set, so treating
+    /// it as a real comparison manufactures a DIVERGES on data that never
+    /// asserted an approval in the first place. A templating step that
+    /// emptied the file, or a `jq` filter that matched nothing, must not
+    /// turn a green build red and blame the record — this is malformed
+    /// input, exiting 2 like every other bad-input path.
+    #[test]
+    fn an_empty_measurements_list_is_an_error() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "poc-audit-reference-values-empty-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, r#"{"measurements": []}"#).expect("write");
+        let err = ReferenceValues::load(&path).expect_err("must reject an empty list");
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            err.to_string().contains("empty"),
+            "the error must say the list is empty, got: {err}"
+        );
     }
 }

@@ -81,6 +81,37 @@ fn an_unreadable_reference_values_file_is_an_error_not_an_unchecked_row() {
     );
 }
 
+/// I3: `{"measurements": []}` must not be treated as a real (empty)
+/// approval list — there is no second party to disagree with, so comparing
+/// against it can only fabricate a DIVERGES on a record that was never
+/// judged against anything the operator actually approved. This is
+/// malformed input, exit 2, the same as an unreadable or non-JSON file.
+#[test]
+fn an_empty_reference_values_list_is_an_error_not_a_diverges() {
+    let out = bin()
+        .arg(GOOD)
+        .arg("--reference-values")
+        .arg("tests/fixtures/reference-values/empty.json")
+        .output()
+        .expect("run poc-audit");
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "an empty --reference-values list must exit 2, not DIVERGES; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "an empty --reference-values list must print nothing to stdout, got:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("empty"),
+        "the error must say the list is empty, got: {stderr}"
+    );
+}
+
 /// The other misconfiguration shape: a file that exists but is not valid
 /// JSON.
 #[test]
