@@ -10,11 +10,16 @@ use crate::verdict::{BackedBy, Context, Finding, Profile, Residual, Verdict, Why
 pub struct Identity(pub &'static str);
 
 impl Identity {
+    /// Exact match on the two field paths this auditor is ever constructed
+    /// with in `registry::auditors()`. A `.ends_with("agent_id")` /
+    /// fall-through-else dispatch quietly reads `initiating_user`'s value for
+    /// ANY other field path, including a typo — so an unrecognized path
+    /// panics here rather than silently quoting the wrong field.
     fn value<'a>(&self, rec: &'a Record) -> &'a str {
-        if self.0.ends_with("agent_id") {
-            &rec.poc_claims.agent_id
-        } else {
-            &rec.poc_claims.initiating_user
+        match self.0 {
+            "poc_claims.agent_id" => &rec.poc_claims.agent_id,
+            "poc_claims.initiating_user" => &rec.poc_claims.initiating_user,
+            other => panic!("Identity auditor constructed with unknown field path: {other}"),
         }
     }
 }
@@ -121,6 +126,16 @@ mod tests {
         Record::parse(&v.to_string()).expect("fixture parses")
     }
 
+    fn record_with_both(agent_id: &str, initiating_user: &str) -> Record {
+        let mut v: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/vectors/positive/hardware-attested.json"
+        ))
+        .expect("fixture is json");
+        v["poc_claims"]["agent_id"] = serde_json::json!(agent_id);
+        v["poc_claims"]["initiating_user"] = serde_json::json!(initiating_user);
+        Record::parse(&v.to_string()).expect("fixture parses")
+    }
+
     /// Under the default profile a persistent identifier SATISFIES C5.1.1.
     /// Reporting a failure here would be a false finding on every conformant
     /// record — the overclaim this whole programme attacks.
@@ -177,5 +192,32 @@ mod tests {
             &Context::default(),
         );
         assert!(!f.verdict.is_unchecked());
+    }
+
+    /// `Identity::value`'s dispatch used to be `ends_with("agent_id")` /
+    /// else, which falls through to `initiating_user` for ANY other field
+    /// path. Replacing the whole if/else with `&rec.poc_claims.agent_id`
+    /// left every existing test green, because none of them constructed
+    /// `Identity("poc_claims.initiating_user")` with a record where the two
+    /// values differ. This one does, and reads the reason — the only place
+    /// the value surfaces — to prove `initiating_user`'s own value came
+    /// through, not `agent_id`'s. See IMPORTANT 4.
+    #[test]
+    fn initiating_user_reads_its_own_field_not_agent_id() {
+        let rec = record_with_both(
+            "did:web:example.org:agents:agent-value",
+            "user:initiating-value",
+        );
+        let f = Identity("poc_claims.initiating_user").audit(&rec, &Context::default());
+        assert!(
+            f.reason.contains("user:initiating-value"),
+            "expected initiating_user's own value in the reason, got: {}",
+            f.reason
+        );
+        assert!(
+            !f.reason.contains("agent-value"),
+            "must not quote agent_id's value for the initiating_user row, got: {}",
+            f.reason
+        );
     }
 }

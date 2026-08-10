@@ -60,6 +60,13 @@ impl Verdict {
     pub fn auditor_failed(&self) -> bool {
         matches!(self, Verdict::Unchecked(Why::AuditorFailed(_)))
     }
+    /// True only for `Unchecked(Why::MissingInput(_))` — a row an operator
+    /// could deepen by supplying the named flag. `Why::NoAuditor` never
+    /// satisfies this: no invocation makes an unimplemented auditor exist,
+    /// so gating on it would make `--require-checked` permanently red.
+    pub fn is_unchecked_missing_input(&self) -> bool {
+        matches!(self, Verdict::Unchecked(Why::MissingInput(_)))
+    }
 }
 
 /// One principal that must be honest for a finding to mean what it says.
@@ -147,5 +154,16 @@ mod tests {
         assert!(Verdict::Diverges.is_failure());
         assert!(Verdict::CannotHold.is_failure());
         assert!(!Verdict::Established(BackedBy::new("x").expect("non-empty")).is_failure());
+    }
+
+    /// The distinction `--require-checked` is scoped on: a missing flag is
+    /// something an operator can fix, "no auditor exists" is not. Collapsing
+    /// them back together is what made the gate permanently red.
+    #[test]
+    fn only_missing_input_counts_as_gate_relevant_unchecked() {
+        assert!(Verdict::Unchecked(Why::MissingInput("--payload")).is_unchecked_missing_input());
+        assert!(!Verdict::Unchecked(Why::NoAuditor).is_unchecked_missing_input());
+        assert!(!Verdict::Unchecked(Why::AuditorFailed("boom".into())).is_unchecked_missing_input());
+        assert!(!Verdict::Asserted.is_unchecked_missing_input());
     }
 }

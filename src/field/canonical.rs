@@ -133,6 +133,21 @@ mod tests {
         assert_ne!(f.verdict.label(), "DIVERGES", "reason was: {}", f.reason);
     }
 
+    /// Pinned positively, not only `!= "DIVERGES"`: `--payload` was supplied
+    /// and every decoder agreed, so this is ASSERTED — "we looked and found
+    /// nothing behind the digest beyond agreement" — not UNCHECKED. If the
+    /// agreeing branch silently became `Unchecked(Why::NoAuditor)`, the test
+    /// above would still pass (`Unchecked` != `"DIVERGES"`), and ASSERTED
+    /// would have collapsed into UNCHECKED undetected. See IMPORTANT 3.
+    /// `no_payload_is_unchecked_and_names_the_flag` below pins the other
+    /// direction: input absent is UNCHECKED.
+    #[test]
+    fn an_unambiguous_payload_is_asserted_not_unchecked() {
+        let payload = r#"{"amount":100,"to":"acct-legit"}"#;
+        let f = Canonical.audit(&record(), &ctx_with(payload));
+        assert_eq!(f.verdict.label(), "ASSERTED", "reason was: {}", f.reason);
+    }
+
     #[test]
     fn no_payload_is_unchecked_and_names_the_flag() {
         let f = Canonical.audit(&record(), &Context::default());

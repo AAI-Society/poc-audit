@@ -137,6 +137,49 @@ fn require_checked_reaches_the_explain_path_too() {
     );
 }
 
+/// `--require-checked` must be reachable, or it is a constant function that
+/// fails every record and gets deleted from CI. With every deepening input
+/// supplied, no row can be `Unchecked(Why::MissingInput(_))` — only
+/// `Why::NoAuditor` rows remain, and those are excluded from the gate on
+/// purpose (see `verdict::Verdict::is_unchecked_missing_input`). So the gate
+/// must be satisfiable.
+#[test]
+fn require_checked_can_exit_0_with_every_deepening_input_supplied() {
+    let out = bin()
+        .arg(GOOD)
+        .arg("--deployment")
+        .arg("tests/fixtures/parallax/sigma2-tdx.toml")
+        .arg("--payload")
+        .arg("tests/fixtures/payload/unambiguous.json")
+        .arg("--fleet")
+        .arg("tests/fixtures/occultation/fleet-uniform.toml")
+        .arg("--require-checked")
+        .output()
+        .expect("run");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The other direction: with a deepening input missing (here, no
+/// `--deployment`, so `submods.attestation.measurement` stays
+/// `Unchecked(Why::MissingInput("--deployment"))`), the gate must still
+/// fail. Without this, scoping the gate to `Why::MissingInput` could have
+/// been implemented by excluding everything and the gate would never bite.
+#[test]
+fn require_checked_still_exits_1_when_a_deepening_input_is_missing() {
+    let out = bin()
+        .arg(GOOD)
+        .arg("--require-checked")
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(1));
+}
+
 #[test]
 fn a_clean_set_of_findings_exits_0() {
     use poc_audit::verdict::{BackedBy, Finding, Verdict};

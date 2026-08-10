@@ -41,9 +41,13 @@ fn our_residual_list_is_parallax_s_own() {
     };
     let f = AttestationField("submods.attestation.measurement").audit(&rec, &ctx);
 
+    // ASSERTED, not ESTABLISHED: the solver tells us who must be honest for
+    // the *reference values* to hold, but nothing here ever compares this
+    // record's measurement against them. See CRITICAL 2. The residual
+    // comparison below is unaffected — it is the reason this test exists.
     assert_eq!(
         f.verdict.label(),
-        "ESTABLISHED",
+        "ASSERTED",
         "the auditor did not reach the solver; reason was: {}",
         f.reason
     );

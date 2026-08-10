@@ -66,8 +66,13 @@ pub fn render_explain(findings: &[Finding], field: &str) -> Result<String, Strin
     Ok(out)
 }
 
-/// `0` clean · `1` a failure or, under `--require-checked`, an unchecked row ·
-/// `2` an auditor failed.
+/// `0` clean · `1` a failure or, under `--require-checked`, a row waiting on
+/// a missing input · `2` an auditor failed.
+///
+/// `--require-checked` is scoped to `Why::MissingInput` rows on purpose. A
+/// row with `Why::NoAuditor` cannot be turned into anything else by any
+/// invocation of this tool, so gating on it would make the flag permanently
+/// red on every record — which is how CI gates get deleted.
 pub fn exit_code(findings: &[Finding], require_checked: bool) -> u8 {
     if findings.iter().any(|f| f.verdict.auditor_failed()) {
         return 2;
@@ -75,7 +80,11 @@ pub fn exit_code(findings: &[Finding], require_checked: bool) -> u8 {
     if findings.iter().any(|f| f.verdict.is_failure()) {
         return 1;
     }
-    if require_checked && findings.iter().any(|f| f.verdict.is_unchecked()) {
+    if require_checked
+        && findings
+            .iter()
+            .any(|f| f.verdict.is_unchecked_missing_input())
+    {
         return 1;
     }
     0
@@ -238,7 +247,14 @@ mod tests {
     }
 
     /// The report must never print an aggregate pass, and the tier line is the
-    /// nearest thing to one. Guard the words directly.
+    /// nearest thing to one. Guard the words directly — in every user-facing
+    /// rendering, not only `render_table`.
+    ///
+    /// This test used to call only `render_table`. Prepending
+    /// `"COMPLIANT — this deployment passed."` to `tier_line`'s output left
+    /// every test green while the binary printed it, because nothing here
+    /// ever looked at `tier_line`'s or `render_explain`'s output. All three
+    /// renderings are checked now.
     #[test]
     fn no_rendering_prints_an_aggregate_pass() {
         let findings = vec![Finding {
@@ -247,9 +263,27 @@ mod tests {
             reason: "r".into(),
             residual: vec![],
         }];
+        let banned = ["compliant", "passed", "conformant"];
+
         let table = render_table(&findings).to_lowercase();
-        for banned in ["compliant", "passed", "conformant"] {
-            assert!(!table.contains(banned), "the table said {banned:?}");
+        for word in banned {
+            assert!(!table.contains(word), "render_table said {word:?}");
+        }
+
+        let rec = crate::record::Record::parse(include_str!(
+            "../tests/fixtures/vectors/positive/hardware-attested.json"
+        ))
+        .expect("fixture parses");
+        let tier = tier_line(&rec).to_lowercase();
+        for word in banned {
+            assert!(!tier.contains(word), "tier_line said {word:?}");
+        }
+
+        let explain = render_explain(&findings, "a")
+            .expect("field exists")
+            .to_lowercase();
+        for word in banned {
+            assert!(!explain.contains(word), "render_explain said {word:?}");
         }
     }
 }

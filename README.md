@@ -90,10 +90,16 @@ be honest, what they could do, and how long before you would know.
 | code | condition |
 | :--: | --- |
 | `0` | nothing `DIVERGES` or `CANNOT HOLD` |
-| `1` | at least one did, or any `UNCHECKED` under `--require-checked` |
+| `1` | at least one did, or a deepenable `UNCHECKED` row under `--require-checked` |
 | `2` | bad input, an unreadable optional input, or an auditor that failed |
 
-`--require-checked` is the CI gate for "no unaudited fields". It changes only
+`--require-checked` is the CI gate for "no field is waiting on an input you
+could supply." It fails only on `UNCHECKED` rows caused by a missing flag —
+`--deployment`, `--payload`, or `--fleet` not given for a field that has an
+auditor — not on rows with no auditor at all (chain continuity, AgBOM, and
+the rest of `registry::ACCOUNTED`'s `Coverage::Unaudited` entries). Those
+cannot be turned into anything else by any invocation of this tool, so gating
+on them would leave the flag permanently red on every record. It changes only
 the exit code; the report is byte-identical.
 
 ## What this does not do
