@@ -54,3 +54,28 @@ fn an_unreadable_payload_is_an_error_not_an_unchecked_row() {
         "the error must name the path, got: {stderr}"
     );
 }
+
+/// The same strictness applies to `--fleet`: a bad path is an error, not a
+/// quiet downgrade to an UNCHECKED row. `--deployment` and `--payload` each
+/// got this test the moment they gained the strict pre-check; `--fleet` uses
+/// the identical pattern and needs the identical guard, or a later refactor
+/// of the exit matrix could regress it with nothing to catch it.
+#[test]
+fn an_unreadable_fleet_is_an_error_not_an_unchecked_row() {
+    let out = bin()
+        .arg("tests/fixtures/vectors/positive/hardware-attested.json")
+        .arg("--fleet")
+        .arg("/nonexistent/fleet.toml")
+        .output()
+        .expect("run poc-audit");
+
+    assert_eq!(out.status.code(), Some(2), "a bad --fleet must exit 2");
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("UNCHECKED"),
+        "a bad --fleet produced a report instead of an error"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("/nonexistent/fleet.toml"),
+        "the error must name the path"
+    );
+}

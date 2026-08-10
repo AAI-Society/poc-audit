@@ -37,13 +37,26 @@ fn our_anonymity_figures_are_occultation_s_own() {
 
     // The figures reach the operator through `reason`, so assert on what the
     // operator actually reads rather than on an internal value.
-    assert!(
-        f.reason.contains(&upstream.fleet_size.to_string())
-            && f.reason.contains(&upstream.min_set.to_string()),
-        "our reason does not carry occultation's own figures \
-         (fleet_size {}, min_set {}): {}",
-        upstream.fleet_size,
-        upstream.min_set,
-        f.reason
-    );
+    //
+    // Each number is asserted TOGETHER WITH ITS LABEL. A bare
+    // `contains(&min_set.to_string())` passes coincidentally: on this fixture
+    // `min_set` and `singletons` are both 1, and the base reason already
+    // contains a stray "1" from the agent id `…ref-1`, so swapping the two
+    // fields left the test green. Only `fleet_size` was doing any work.
+    for (label, value) in [
+        ("hosts", upstream.fleet_size),
+        ("smallest anonymity set", upstream.min_set),
+        ("singletons", upstream.singletons),
+    ] {
+        let needle = match label {
+            "hosts" => format!("{value} hosts"),
+            "singletons" => format!("{value} singletons"),
+            _ => format!("{label} {value}"),
+        };
+        assert!(
+            f.reason.contains(&needle),
+            "our reason does not carry occultation's own {label} as `{needle}`: {}",
+            f.reason
+        );
+    }
 }
