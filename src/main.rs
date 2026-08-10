@@ -36,6 +36,11 @@ struct Cli {
     /// Print the residual trust set behind one field instead of the table.
     #[arg(long, value_name = "FIELD")]
     explain: Option<String>,
+
+    /// Fail on any UNCHECKED row. The CI gate for "no unaudited fields".
+    /// Changes only the exit code; the report is byte-identical.
+    #[arg(long)]
+    require_checked: bool,
 }
 
 fn main() -> ExitCode {
@@ -90,7 +95,7 @@ fn main() -> ExitCode {
         return match poc_audit::report::render_explain(&findings, field) {
             Ok(s) => {
                 print!("{s}");
-                ExitCode::from(poc_audit::report::exit_code(&findings, false))
+                ExitCode::from(poc_audit::report::exit_code(&findings, cli.require_checked))
             }
             Err(e) => {
                 eprintln!("error: {e}");
@@ -99,5 +104,5 @@ fn main() -> ExitCode {
         };
     }
     print!("{}", poc_audit::report::render_table(&findings));
-    ExitCode::from(poc_audit::report::exit_code(&findings, false))
+    ExitCode::from(poc_audit::report::exit_code(&findings, cli.require_checked))
 }
