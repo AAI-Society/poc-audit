@@ -219,25 +219,39 @@ as they do for a single record.
 
 `--require-checked` is the CI gate for "no field is waiting on an input you
 could supply." It fails only on `UNCHECKED` rows caused by a missing flag —
-`--deployment`, `--payload`, or `--reference-values` not given for a field
-that has an auditor — not on rows with no auditor reachable from *this*
-invocation at all: AgBOM, the rest of `registry::ACCOUNTED`'s
-`Coverage::Unaudited` entries, and the three chain fields in single-record
-mode, which need a different invocation (`--chain`) rather than a flag added
-to this one. Those cannot be turned into anything else by any invocation of
-this tool run this way, so gating on them would leave the flag permanently
-red on every record. It changes only the exit code; the report is
-byte-identical. (`--chain` mode's own findings are never
-`Unchecked(Why::MissingInput(_))` either — a repeated `chain_head` aside,
-every row resolves outright from the records supplied — so
+`--deployment` or `--payload` not given for a field that has an auditor —
+not on rows with no auditor reachable from *this* invocation at all: AgBOM,
+the rest of `registry::ACCOUNTED`'s `Coverage::Unaudited` entries, and the
+three chain fields in single-record mode, which need a different invocation
+(`--chain`) rather than a flag added to this one. Those cannot be turned
+into anything else by any invocation of this tool run this way, so gating on
+them would leave the flag permanently red on every record. It changes only
+the exit code; the report is byte-identical. (`--chain` mode's own findings
+are never `Unchecked(Why::MissingInput(_))` either — a repeated `chain_head`
+aside, every row resolves outright from the records supplied — so
 `--require-checked` is a no-op there, never a source of new failures.)
 
-`--fleet` is not part of this list: its two rows (`agent_id`,
-`initiating_user`) are never `UNCHECKED` for lack of it — they resolve to
-`ESTABLISHED` or `CANNOT HOLD` from the record and `--profile` alone, and
-`--fleet`'s absence only shortens the reason text ("Supply --fleet for the
-anonymity-set size") rather than leaving the row waiting. `--require-checked`
-therefore cannot be made to fire on a missing `--fleet`.
+`--fleet` and `--reference-values` are deliberately not part of this list.
+`Why::MissingInput` is constructed in exactly two places in this codebase —
+`field/canonical.rs` (`--payload`) and `field/attestation.rs`
+(`--deployment`) — so no flag other than those two can ever make a row
+`UNCHECKED` by name. `--fleet`'s two rows (`agent_id`, `initiating_user`) are
+never `UNCHECKED` for lack of it — they resolve to `ESTABLISHED` or `CANNOT
+HOLD` from the record and `--profile` alone, and `--fleet`'s absence only
+shortens the reason text ("Supply --fleet for the anonymity-set size")
+rather than leaving the row waiting. `--reference-values`'s row
+(`submods.attestation.measurement`) is resolved outright without it —
+`ASSERTED` when the record names no `reference_values_uri`, `ASSERTED` again
+(with a residual) when `--deployment` is supplied and solves — and the one
+case where it IS `UNCHECKED` (`reference_values_uri` named, no
+`--deployment`) is already gated by the missing `--deployment`, not by the
+missing `--reference-values`. Supplying `--reference-values` on top of that
+`ASSERTED` row upgrades it to `ESTABLISHED` or downgrades it to `DIVERGES`,
+but its *absence* never independently flips a row to `UNCHECKED`.
+`--require-checked` therefore cannot be made to fire on a missing `--fleet`
+or a missing `--reference-values`. (An earlier version of this document
+claimed the opposite for `--reference-values` — that claim was never true of
+any code path and is corrected here.)
 
 ## What this does not do
 
