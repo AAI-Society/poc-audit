@@ -48,10 +48,7 @@ pub const ACCOUNTED: &[(&str, Coverage)] = &[
         "poc_claims.initiating_user",
         Coverage::Unaudited("identity auditor arrives in Task 5"),
     ),
-    (
-        "poc_claims.canonical_snapshot_hash",
-        Coverage::Unaudited("canonical auditor arrives in Task 4"),
-    ),
+    ("poc_claims.canonical_snapshot_hash", Coverage::Audited),
     ("poc_claims.chain_head", Coverage::Audited),
     ("poc_claims.merkle_root", Coverage::Audited),
     ("poc_claims.step_index", Coverage::Audited),
@@ -103,6 +100,7 @@ pub fn auditors() -> Vec<Box<dyn FieldAuditor>> {
         Box::new(crate::field::attestation::AttestationField(
             "submods.attestation.measurement",
         )),
+        Box::new(crate::field::canonical::Canonical),
     ]
 }
 

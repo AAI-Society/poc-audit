@@ -1,4 +1,5 @@
 pub mod attestation;
+pub mod canonical;
 pub mod chain;
 
 use crate::record::Record;
