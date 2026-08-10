@@ -32,6 +32,10 @@ struct Cli {
     /// the record, because the record does not say.
     #[arg(long, value_enum, default_value_t = poc_audit::verdict::Profile::Standard)]
     profile: poc_audit::verdict::Profile,
+
+    /// Print the residual trust set behind one field instead of the table.
+    #[arg(long, value_name = "FIELD")]
+    explain: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -82,6 +86,18 @@ fn main() -> ExitCode {
         profile: cli.profile,
     };
     let findings = poc_audit::registry::run(&rec, &ctx);
+    if let Some(field) = cli.explain.as_ref() {
+        return match poc_audit::report::render_explain(&findings, field) {
+            Ok(s) => {
+                print!("{s}");
+                ExitCode::from(poc_audit::report::exit_code(&findings, false))
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        };
+    }
     print!("{}", poc_audit::report::render_table(&findings));
     ExitCode::from(poc_audit::report::exit_code(&findings, false))
 }
