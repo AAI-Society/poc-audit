@@ -1,0 +1,38 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+
+      # The audit tool must be able to audit the standard's own vectors. This
+      # is the end-to-end check that the four layers compose.
+      - name: audit every positive vector
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(tests/fixtures/vectors/positive/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no positive vectors found; this step proved nothing"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "--- $f"
+            set +e
+            cargo run --quiet -- "$f"
+            code=$?
+            set -e
+            # 0 and 1 are both real audits. 2 means we could not audit it.
+            if [ "$code" -eq 2 ]; then
+              echo "::error::$f could not be audited (exit 2)"
+              exit 1
+            fi
+          done

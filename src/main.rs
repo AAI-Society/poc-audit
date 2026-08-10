@@ -104,5 +104,6 @@ fn main() -> ExitCode {
         };
     }
     print!("{}", poc_audit::report::render_table(&findings));
+    println!("{}", poc_audit::report::tier_line(&rec));
     ExitCode::from(poc_audit::report::exit_code(&findings, cli.require_checked))
 }

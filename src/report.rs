@@ -1,3 +1,4 @@
+use crate::record::Record;
 use crate::verdict::{Finding, Residual};
 
 pub fn render_table(findings: &[Finding]) -> String {
@@ -80,6 +81,24 @@ pub fn exit_code(findings: &[Finding], require_checked: bool) -> u8 {
     0
 }
 
+/// The C8 tier, printed because a conformance process asks for it and
+/// subordinated because P01 holds the ladder is wrong as written. Attribution
+/// is not decoration: it is the difference between reporting the standard's
+/// framing and endorsing it.
+pub fn tier_line(rec: &Record) -> String {
+    let tier = match rec.submods.attestation.platform.as_str() {
+        "SOFTWARE" => 1,
+        _ if rec.submods.attestation.reference_values_uri.is_some() => 3,
+        _ => 2,
+    };
+    let why = match tier {
+        1 => "platform is SOFTWARE: no hardware isolation",
+        2 => "no reference values, so code identity is unestablished",
+        _ => "hardware platform with named reference values",
+    };
+    format!("per C8 (see P01: the ladder is contested): Tier {tier} — {why}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +155,50 @@ mod tests {
             out.contains("no residual trust set"),
             "an empty drill-down must be stated, got: {out}"
         );
+    }
+
+    #[test]
+    fn the_tier_line_attributes_itself_to_the_standard_and_names_the_dispute() {
+        let rec = crate::record::Record::parse(include_str!(
+            "../tests/fixtures/vectors/positive/hardware-attested.json"
+        ))
+        .expect("fixture parses");
+        let line = tier_line(&rec);
+        assert!(
+            line.contains("per C8"),
+            "the tier must be attributed: {line}"
+        );
+        assert!(line.contains("P01"), "the dispute must be named: {line}");
+    }
+
+    #[test]
+    fn a_software_platform_cannot_reach_tier_3() {
+        let mut v: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/vectors/positive/hardware-attested.json"
+        ))
+        .expect("json");
+        v["submods"]["attestation"]["platform"] = serde_json::json!("SOFTWARE");
+        let rec = crate::record::Record::parse(&v.to_string()).expect("parses");
+        assert!(
+            tier_line(&rec).contains("Tier 1"),
+            "got: {}",
+            tier_line(&rec)
+        );
+    }
+
+    /// The report must never print an aggregate pass, and the tier line is the
+    /// nearest thing to one. Guard the words directly.
+    #[test]
+    fn no_rendering_prints_an_aggregate_pass() {
+        let findings = vec![Finding {
+            field: "a",
+            verdict: Verdict::Asserted,
+            reason: "r".into(),
+            residual: vec![],
+        }];
+        let table = render_table(&findings).to_lowercase();
+        for banned in ["compliant", "passed", "conformant"] {
+            assert!(!table.contains(banned), "the table said {banned:?}");
+        }
     }
 }
