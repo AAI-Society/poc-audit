@@ -30,6 +30,20 @@ fn missing_note(missing: &[transit::external::Missing]) -> String {
     }
 }
 
+/// Occurrences of the note's name in real code, ignoring comment lines.
+///
+/// A raw `matches(..).count()` over the source is satisfied by a comment, so
+/// the guard that uses it can be defeated by the same edit that breaks what it
+/// guards. Borrowed from the sibling `occultation` crate, whose formatter ban
+/// strips comment lines for exactly this reason.
+#[cfg(test)]
+fn count_real_calls(src: &str) -> usize {
+    src.lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .map(|l| l.matches("missing_note(").count())
+        .sum()
+}
+
 impl FieldAuditor for Canonical {
     fn field(&self) -> &'static str {
         FIELD
@@ -173,10 +187,31 @@ mod tests {
         assert_eq!(src.matches(marker).count(), 1, "ambiguous test module");
         let non_test = src.split(marker).next().expect("split yields a head");
         assert_eq!(
-            non_test.matches("missing_note(").count(),
-            3,
-            "expected the definition plus one call in each of the two branches; \
+            count_real_calls(non_test),
+            4,
+            "expected the definition, one call in each of the two branches, and one \
+             occurrence inside count_real_calls's own string literal; \
              the agreeing branch is the one that silently loses it"
+        );
+    }
+
+    /// The guard above counts occurrences in source, and a raw substring count
+    /// is satisfied by a COMMENT. A reviewer demonstrated it: deleting the real
+    /// call from the agreeing branch and adding a commented-out mention
+    /// restored the count, and the suite went green while the regression it
+    /// exists to catch was live. Comment lines are therefore stripped before
+    /// counting, and this test is what holds that.
+    #[test]
+    fn a_commented_mention_does_not_satisfy_the_guard() {
+        let synthetic = concat!(
+            "fn missing_note(m: &[X]) -> String { }\n",
+            "    // a mention of missing_note( in a comment\n",
+            "        let a = missing_note(&x);\n",
+        );
+        assert_eq!(
+            count_real_calls(synthetic),
+            2,
+            "a commented occurrence was counted as a call"
         );
     }
 }
