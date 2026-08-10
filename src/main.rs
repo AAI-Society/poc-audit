@@ -17,6 +17,11 @@ struct Cli {
     /// reference values.
     #[arg(long)]
     deployment: Option<PathBuf>,
+
+    /// The request bytes the record's canonical_snapshot_hash covers. No
+    /// decoder configuration is needed: transit runs every model it can find.
+    #[arg(long)]
+    payload: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -44,8 +49,19 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     }
+    let payload = match cli.payload.as_ref() {
+        None => None,
+        Some(p) => match std::fs::read_to_string(p) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("error: cannot use --payload {}: {e}", p.display());
+                return ExitCode::from(2);
+            }
+        },
+    };
     let ctx = poc_audit::verdict::Context {
         deployment: cli.deployment.clone(),
+        payload,
         ..Default::default()
     };
     let findings = poc_audit::registry::run(&rec, &ctx);

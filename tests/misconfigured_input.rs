@@ -29,3 +29,28 @@ fn an_unreadable_deployment_is_an_error_not_an_unchecked_row() {
         "the error must name the path, got: {stderr}"
     );
 }
+
+/// The same strictness applies to `--payload`: a bad path is an error, not a
+/// quiet downgrade to an UNCHECKED row.
+#[test]
+fn an_unreadable_payload_is_an_error_not_an_unchecked_row() {
+    let out = bin()
+        .arg("tests/fixtures/vectors/positive/hardware-attested.json")
+        .arg("--payload")
+        .arg("/nonexistent/payload.json")
+        .output()
+        .expect("run poc-audit");
+
+    assert_eq!(out.status.code(), Some(2), "a bad --payload must exit 2");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("UNCHECKED"),
+        "a bad --payload produced a report instead of an error:\n{stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("/nonexistent/payload.json"),
+        "the error must name the path, got: {stderr}"
+    );
+}
