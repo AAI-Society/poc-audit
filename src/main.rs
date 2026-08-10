@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Parser)]
-#[command(name = "poc-audit", about = "What actually backs each claim in a Proof-of-Control evidence record")]
+#[command(
+    name = "poc-audit",
+    about = "What actually backs each claim in a Proof-of-Control evidence record"
+)]
 struct Cli {
     /// The evidence record to audit.
     record: PathBuf,
@@ -41,7 +44,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     }
-    let ctx = poc_audit::verdict::Context { deployment: cli.deployment.clone(), ..Default::default() };
+    let ctx = poc_audit::verdict::Context {
+        deployment: cli.deployment.clone(),
+        ..Default::default()
+    };
     let findings = poc_audit::registry::run(&rec, &ctx);
     print!("{}", poc_audit::report::render_table(&findings));
     ExitCode::from(poc_audit::report::exit_code(&findings, false))

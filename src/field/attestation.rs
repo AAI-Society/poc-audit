@@ -88,7 +88,9 @@ impl AttestationField {
 }
 
 impl FieldAuditor for AttestationField {
-    fn field(&self) -> &'static str { self.0 }
+    fn field(&self) -> &'static str {
+        self.0
+    }
     fn audit(&self, rec: &Record, ctx: &Context) -> Finding {
         if self.0.ends_with(".platform") {
             self.platform_finding(rec)
@@ -148,8 +150,10 @@ mod tests {
     /// MUST refuse to treat it as a Tier 3 claim, so it cannot be established.
     #[test]
     fn a_software_platform_cannot_hold() {
-        let f = AttestationField("submods.attestation.platform")
-            .audit(&record_with("SOFTWARE", Some("https://rv.example/v.json")), &Context::default());
+        let f = AttestationField("submods.attestation.platform").audit(
+            &record_with("SOFTWARE", Some("https://rv.example/v.json")),
+            &Context::default(),
+        );
         assert_eq!(f.verdict.label(), "CANNOT HOLD");
     }
 

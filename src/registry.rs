@@ -16,34 +16,78 @@ pub enum Coverage {
 /// `every_required_field_is_accounted_for` until someone decides, explicitly,
 /// whether it gets an auditor or a reason.
 pub const ACCOUNTED: &[(&str, Coverage)] = &[
-    ("iss",         Coverage::Unaudited("issuer identity is out of scope")),
-    ("iat",         Coverage::Unaudited("issuance time is out of scope")),
-    ("nonce",       Coverage::Unaudited("freshness against a challenge is out of scope")),
-    ("eat_profile", Coverage::Unaudited("profile identity is checked by validate.py")),
-    ("poc_claims",  Coverage::Unaudited("audited through its individual claims")),
-    ("submods",     Coverage::Unaudited("audited through submods.attestation.*")),
-
+    (
+        "iss",
+        Coverage::Unaudited("issuer identity is out of scope"),
+    ),
+    ("iat", Coverage::Unaudited("issuance time is out of scope")),
+    (
+        "nonce",
+        Coverage::Unaudited("freshness against a challenge is out of scope"),
+    ),
+    (
+        "eat_profile",
+        Coverage::Unaudited("profile identity is checked by validate.py"),
+    ),
+    (
+        "poc_claims",
+        Coverage::Unaudited("audited through its individual claims"),
+    ),
+    (
+        "submods",
+        Coverage::Unaudited("audited through submods.attestation.*"),
+    ),
     // Flipped to Coverage::Audited by the task that adds the auditor. A field
     // marked Audited with no auditor claiming it panics `run` by design, so
     // these two facts must move together, in one commit, every time.
-    ("poc_claims.agent_id",                Coverage::Unaudited("identity auditor arrives in Task 5")),
-    ("poc_claims.initiating_user",         Coverage::Unaudited("identity auditor arrives in Task 5")),
-    ("poc_claims.canonical_snapshot_hash", Coverage::Unaudited("canonical auditor arrives in Task 4")),
-
-    ("poc_claims.chain_head",              Coverage::Audited),
-    ("poc_claims.merkle_root",             Coverage::Audited),
-    ("poc_claims.step_index",              Coverage::Audited),
-
-    ("poc_claims.agbom_digest",       Coverage::Unaudited("no AgBOM tooling exists; see P10")),
-    ("poc_claims.interception_point", Coverage::Unaudited("enumerated value, checked by validate.py")),
-    ("poc_claims.tree_size",          Coverage::Unaudited("consistency with step_index is validate.py's semantic layer")),
-    ("poc_claims.policy_bundle_hash", Coverage::Unaudited("no policy-bundle tooling exists")),
-    ("poc_claims.target_resource",    Coverage::Unaudited("free text; nothing to check it against")),
-    ("poc_claims.path_summary_hash",  Coverage::Unaudited("bounded path summaries are P04, unbuilt")),
-    ("poc_claims.verdict",            Coverage::Unaudited("enumerated value, checked by validate.py")),
-    ("poc_claims.alg",                Coverage::Unaudited("signature checking is validate.py's semantic layer")),
-
-    ("submods.attestation.platform",    Coverage::Audited),
+    (
+        "poc_claims.agent_id",
+        Coverage::Unaudited("identity auditor arrives in Task 5"),
+    ),
+    (
+        "poc_claims.initiating_user",
+        Coverage::Unaudited("identity auditor arrives in Task 5"),
+    ),
+    (
+        "poc_claims.canonical_snapshot_hash",
+        Coverage::Unaudited("canonical auditor arrives in Task 4"),
+    ),
+    ("poc_claims.chain_head", Coverage::Audited),
+    ("poc_claims.merkle_root", Coverage::Audited),
+    ("poc_claims.step_index", Coverage::Audited),
+    (
+        "poc_claims.agbom_digest",
+        Coverage::Unaudited("no AgBOM tooling exists; see P10"),
+    ),
+    (
+        "poc_claims.interception_point",
+        Coverage::Unaudited("enumerated value, checked by validate.py"),
+    ),
+    (
+        "poc_claims.tree_size",
+        Coverage::Unaudited("consistency with step_index is validate.py's semantic layer"),
+    ),
+    (
+        "poc_claims.policy_bundle_hash",
+        Coverage::Unaudited("no policy-bundle tooling exists"),
+    ),
+    (
+        "poc_claims.target_resource",
+        Coverage::Unaudited("free text; nothing to check it against"),
+    ),
+    (
+        "poc_claims.path_summary_hash",
+        Coverage::Unaudited("bounded path summaries are P04, unbuilt"),
+    ),
+    (
+        "poc_claims.verdict",
+        Coverage::Unaudited("enumerated value, checked by validate.py"),
+    ),
+    (
+        "poc_claims.alg",
+        Coverage::Unaudited("signature checking is validate.py's semantic layer"),
+    ),
+    ("submods.attestation.platform", Coverage::Audited),
     ("submods.attestation.measurement", Coverage::Audited),
 ];
 
@@ -53,8 +97,12 @@ pub fn auditors() -> Vec<Box<dyn FieldAuditor>> {
         Box::new(Chain("poc_claims.chain_head")),
         Box::new(Chain("poc_claims.merkle_root")),
         Box::new(Chain("poc_claims.step_index")),
-        Box::new(crate::field::attestation::AttestationField("submods.attestation.platform")),
-        Box::new(crate::field::attestation::AttestationField("submods.attestation.measurement")),
+        Box::new(crate::field::attestation::AttestationField(
+            "submods.attestation.platform",
+        )),
+        Box::new(crate::field::attestation::AttestationField(
+            "submods.attestation.measurement",
+        )),
     ]
 }
 
@@ -80,15 +128,15 @@ pub fn run(rec: &Record, ctx: &Context) -> Vec<Finding> {
                 let a = auditors
                     .iter()
                     .find(|a| a.field() == *field)
-                    .unwrap_or_else(|| panic!(
-                        "{field} is marked Audited but no auditor claims it"
-                    ));
+                    .unwrap_or_else(|| {
+                        panic!("{field} is marked Audited but no auditor claims it")
+                    });
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| a.audit(rec, ctx)))
                     .unwrap_or_else(|_| Finding {
                         field,
-                        verdict: Verdict::Unchecked(Why::AuditorFailed(
-                            format!("the auditor for {field} panicked"),
-                        )),
+                        verdict: Verdict::Unchecked(Why::AuditorFailed(format!(
+                            "the auditor for {field} panicked"
+                        ))),
                         reason: format!("the auditor for {field} panicked"),
                         residual: Vec::new(),
                     })

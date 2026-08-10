@@ -5,22 +5,33 @@ use std::collections::BTreeSet;
 /// report silently narrowing.
 #[test]
 fn every_required_field_is_accounted_for() {
-    let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../schema/poc-evidence.schema.json"
-    ))
-    .expect("vendored schema is json");
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/poc-evidence.schema.json"))
+            .expect("vendored schema is json");
 
     let mut required: BTreeSet<String> = BTreeSet::new();
     for r in schema["required"].as_array().expect("top-level required") {
         required.insert(r.as_str().expect("required entry is a string").to_string());
     }
-    for r in schema["$defs"]["pocClaims"]["required"].as_array().expect("pocClaims required") {
+    for r in schema["$defs"]["pocClaims"]["required"]
+        .as_array()
+        .expect("pocClaims required")
+    {
         required.insert(format!("poc_claims.{}", r.as_str().expect("string")));
     }
-    for r in schema["$defs"]["attestation"]["required"].as_array().expect("attestation required") {
-        required.insert(format!("submods.attestation.{}", r.as_str().expect("string")));
+    for r in schema["$defs"]["attestation"]["required"]
+        .as_array()
+        .expect("attestation required")
+    {
+        required.insert(format!(
+            "submods.attestation.{}",
+            r.as_str().expect("string")
+        ));
     }
-    assert!(required.len() > 10, "the schema parse found almost nothing: {required:?}");
+    assert!(
+        required.len() > 10,
+        "the schema parse found almost nothing: {required:?}"
+    );
 
     let accounted: BTreeSet<String> = poc_audit::registry::ACCOUNTED
         .iter()
@@ -106,8 +117,10 @@ fn the_binary_audits_a_real_record_without_panicking() {
         "the binary panicked on a valid record:\n{stderr}"
     );
 
-    let row_fields: Vec<&str> =
-        stdout.lines().filter_map(|l| l.split_whitespace().next()).collect();
+    let row_fields: Vec<&str> = stdout
+        .lines()
+        .filter_map(|l| l.split_whitespace().next())
+        .collect();
     for (field, _) in poc_audit::registry::ACCOUNTED {
         assert_eq!(
             row_fields.iter().filter(|f| *f == field).count(),

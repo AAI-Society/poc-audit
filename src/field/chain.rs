@@ -10,7 +10,9 @@ use crate::verdict::{Context, Finding, Verdict, Why};
 pub struct Chain(pub &'static str);
 
 impl FieldAuditor for Chain {
-    fn field(&self) -> &'static str { self.0 }
+    fn field(&self) -> &'static str {
+        self.0
+    }
     fn audit(&self, _rec: &Record, _ctx: &Context) -> Finding {
         Finding {
             field: self.0,

@@ -9,9 +9,15 @@ pub struct BackedBy(String);
 impl BackedBy {
     pub fn new(s: impl Into<String>) -> Option<Self> {
         let s = s.into();
-        if s.trim().is_empty() { None } else { Some(Self(s)) }
+        if s.trim().is_empty() {
+            None
+        } else {
+            Some(Self(s))
+        }
     }
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Why a field was not checked. The variants differ in consequence, not only
@@ -48,7 +54,9 @@ impl Verdict {
     pub fn is_failure(&self) -> bool {
         matches!(self, Verdict::Diverges | Verdict::CannotHold)
     }
-    pub fn is_unchecked(&self) -> bool { matches!(self, Verdict::Unchecked(_)) }
+    pub fn is_unchecked(&self) -> bool {
+        matches!(self, Verdict::Unchecked(_))
+    }
     pub fn auditor_failed(&self) -> bool {
         matches!(self, Verdict::Unchecked(Why::AuditorFailed(_)))
     }
@@ -110,8 +118,14 @@ mod tests {
     #[test]
     fn an_established_verdict_cannot_name_nothing() {
         assert!(BackedBy::new("parallax::solve").is_some());
-        assert!(BackedBy::new("").is_none(), "an empty attribution is not an attribution");
-        assert!(BackedBy::new("   ").is_none(), "whitespace is not an attribution");
+        assert!(
+            BackedBy::new("").is_none(),
+            "an empty attribution is not an attribution"
+        );
+        assert!(
+            BackedBy::new("   ").is_none(),
+            "whitespace is not an attribution"
+        );
     }
 
     /// The distinction the whole report rests on: "I checked and there is

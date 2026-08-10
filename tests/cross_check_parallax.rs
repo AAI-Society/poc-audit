@@ -35,7 +35,10 @@ fn our_residual_list_is_parallax_s_own() {
         serde_json::json!("https://rv.example/values.json");
     let rec = Record::parse(&v.to_string()).expect("fixture parses");
 
-    let ctx = Context { deployment: Some(path.to_path_buf()), ..Default::default() };
+    let ctx = Context {
+        deployment: Some(path.to_path_buf()),
+        ..Default::default()
+    };
     let f = AttestationField("submods.attestation.measurement").audit(&rec, &ctx);
 
     assert_eq!(

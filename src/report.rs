@@ -1,8 +1,19 @@
 use crate::verdict::Finding;
 
 pub fn render_table(findings: &[Finding]) -> String {
-    let width = findings.iter().map(|f| f.field.len()).max().unwrap_or(0).max(5);
-    let mut out = format!("{:<width$}  {:<12}  {}\n", "FIELD", "VERDICT", "WHY", width = width);
+    let width = findings
+        .iter()
+        .map(|f| f.field.len())
+        .max()
+        .unwrap_or(0)
+        .max(5);
+    let mut out = format!(
+        "{:<width$}  {:<12}  {}\n",
+        "FIELD",
+        "VERDICT",
+        "WHY",
+        width = width
+    );
     for f in findings {
         out.push_str(&format!(
             "{:<width$}  {:<12}  {}\n",
@@ -12,9 +23,7 @@ pub fn render_table(findings: &[Finding]) -> String {
             width = width
         ));
     }
-    out.push_str(
-        "\nNo aggregate verdict is printed. Each row stands alone; see the exit code.\n",
-    );
+    out.push_str("\nNo aggregate verdict is printed. Each row stands alone; see the exit code.\n");
     out
 }
 
