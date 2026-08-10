@@ -37,8 +37,10 @@ struct Cli {
     #[arg(long, value_name = "FIELD")]
     explain: Option<String>,
 
-    /// Fail on any UNCHECKED row. The CI gate for "no unaudited fields".
-    /// Changes only the exit code; the report is byte-identical.
+    /// Fail on any UNCHECKED row a deepening flag could resolve (a missing
+    /// --deployment, --payload, or --fleet) — not on fields this tool does
+    /// not audit at all. Changes only the exit code; the report is
+    /// byte-identical.
     #[arg(long)]
     require_checked: bool,
 }

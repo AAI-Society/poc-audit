@@ -43,14 +43,16 @@ fn our_residual_list_is_parallax_s_own() {
 
     // ASSERTED, not ESTABLISHED: the solver tells us who must be honest for
     // the *reference values* to hold, but nothing here ever compares this
-    // record's measurement against them. See CRITICAL 2. The residual
-    // comparison below is unaffected — it is the reason this test exists.
-    assert_eq!(
-        f.verdict.label(),
-        "ASSERTED",
-        "the auditor did not reach the solver; reason was: {}",
-        f.reason
-    );
+    // record's measurement against them. See CRITICAL 2.
+    //
+    // ASSERTED alone no longer discriminates whether the solver was reached:
+    // the short-circuit branch (no reference_values_uri) is ASSERTED too. The
+    // reference values are set above, so that branch cannot fire here — what
+    // actually proves the solver ran is the residual comparison below: the
+    // short-circuit branch always returns an empty residual, and `theirs` is
+    // asserted non-empty, so a short-circuit would fail `ours == theirs`
+    // rather than merely fail a label check.
+    assert_eq!(f.verdict.label(), "ASSERTED", "reason was: {}", f.reason);
 
     let mut ours: Vec<String> = f
         .residual
@@ -60,6 +62,8 @@ fn our_residual_list_is_parallax_s_own() {
     ours.sort();
     assert_eq!(
         ours, theirs,
-        "our residual list diverged from parallax's own answer"
+        "our residual list diverged from parallax's own answer \
+         (or the auditor short-circuited: theirs is non-empty, so an empty \
+         `ours` here means the solver was never reached)"
     );
 }

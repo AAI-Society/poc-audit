@@ -255,6 +255,14 @@ mod tests {
     /// every test green while the binary printed it, because nothing here
     /// ever looked at `tier_line`'s or `render_explain`'s output. All three
     /// renderings are checked now.
+    ///
+    /// `render_explain` has two branches — the early return for an empty
+    /// residual, and the header-plus-rows path for a non-empty one — and a
+    /// finding with an EMPTY residual only ever exercises the first. A
+    /// reviewer mutated the residual-printing header to
+    /// `"COMPLIANT. Who must be honest…"` and every test, including an
+    /// earlier version of this one, stayed green. Both branches are checked
+    /// now, the second via `finding_with_residual()`.
     #[test]
     fn no_rendering_prints_an_aggregate_pass() {
         let findings = vec![Finding {
@@ -279,11 +287,25 @@ mod tests {
             assert!(!tier.contains(word), "tier_line said {word:?}");
         }
 
-        let explain = render_explain(&findings, "a")
+        let explain_empty = render_explain(&findings, "a")
             .expect("field exists")
             .to_lowercase();
         for word in banned {
-            assert!(!explain.contains(word), "render_explain said {word:?}");
+            assert!(
+                !explain_empty.contains(word),
+                "render_explain (empty residual) said {word:?}"
+            );
+        }
+
+        let with_residual = vec![finding_with_residual()];
+        let explain_residual = render_explain(&with_residual, "submods.attestation.measurement")
+            .expect("field exists")
+            .to_lowercase();
+        for word in banned {
+            assert!(
+                !explain_residual.contains(word),
+                "render_explain (non-empty residual) said {word:?}"
+            );
         }
     }
 }

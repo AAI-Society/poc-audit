@@ -198,7 +198,7 @@ mod tests {
     /// a SOFTWARE platform is perfectly satisfiable: ASSERTED, not CANNOT
     /// HOLD. See CRITICAL 1.
     #[test]
-    fn a_software_platform_cannot_hold() {
+    fn a_software_platform_is_asserted_with_the_tier_limitation_named() {
         let f = AttestationField("submods.attestation.platform").audit(
             &record_with("SOFTWARE", Some("https://rv.example/v.json")),
             &Context::default(),
