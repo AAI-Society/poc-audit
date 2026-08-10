@@ -114,6 +114,19 @@ the exit code; the report is byte-identical.
   path is a separate, unbuilt design: two of them refuse requests and the third
   guarantees it never will.
 
+## Building
+
+`parallax`, `transit` and `occultation` are pulled in as git dependencies from
+private sibling repos in this org. `cargo build`/`cargo test` locally need SSH
+or HTTPS credentials for those repos already configured in your git, same as
+any other private dependency. In CI, the workflow's default `GITHUB_TOKEN` is
+scoped to this repository only and cannot read them, so the pipeline rewrites
+GitHub URLs to authenticate with a `DEPS_READ_TOKEN` repository secret (a
+fine-grained PAT with read access to the org's repos) before the first `cargo`
+invocation. Without that secret set, CI fails fast with an explicit error
+rather than the opaque `could not read Username for 'https://github.com'`
+failure that cost a full CI run to diagnose.
+
 ## Design
 
 [`2026-08-09-poc-audit-design.md`](https://github.com/Task-force-for-AI-agents-in-Healthcare/poc-research-roadmap/blob/master/docs/superpowers/specs/2026-08-09-poc-audit-design.md)

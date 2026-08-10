@@ -7,6 +7,24 @@ use crate::verdict::{Context, Finding, Residual, Verdict, Why};
 /// unsupportable, `measurement` can be present but compared to nothing.
 pub struct AttestationField(pub &'static str);
 
+/// Human text for a `parallax::trust::Impact`, for `--explain`'s "how long
+/// before you would know" drill-down.
+///
+/// Deliberately exhaustive with no catch-all arm: a new `Impact` variant
+/// added upstream must fail to compile here rather than silently falling
+/// through to a generic label that hides what it actually means.
+fn impact_label(impact: &parallax::trust::Impact) -> &'static str {
+    use parallax::trust::Impact;
+    match impact {
+        Impact::Soundness => "Soundness",
+        Impact::Revocation => "Revocation",
+        // The one variant whose Rust identifier reads badly verbatim: no
+        // space, and `Debug` prints exactly the identifier.
+        Impact::SplitView => "Split View",
+        Impact::Availability => "Availability",
+    }
+}
+
 impl AttestationField {
     fn platform_finding(&self, rec: &Record) -> Finding {
         if rec.submods.attestation.platform == "SOFTWARE" {
@@ -51,7 +69,9 @@ impl AttestationField {
             return Finding {
                 field: self.0,
                 verdict: Verdict::Unchecked(Why::MissingInput("--deployment")),
-                reason: "reference values are named, but who operates them is unknown".into(),
+                reason: "reference values are named, but who operates them is unknown; \
+                         supply --deployment to find out"
+                    .into(),
                 residual: Vec::new(),
             };
         };
@@ -83,8 +103,12 @@ impl AttestationField {
                     .map(|a| Residual {
                         principal: a.principal.clone(),
                         capability: a.capability.clone(),
-                        detect: format!("{:?}", a.latency),
-                        impact: format!("{:?}", a.impact),
+                        // `Latency::label()` is parallax's own one canonical
+                        // rendering ("never", "43200s") — the same string its
+                        // own CLI prints — rather than a reimplementation
+                        // here that could drift from it.
+                        detect: a.latency.label(),
+                        impact: impact_label(&a.impact).to_string(),
                     })
                     .collect(),
             },
@@ -159,6 +183,15 @@ mod tests {
             &Context::default(),
         );
         assert_eq!(f.verdict.label(), "UNCHECKED");
+        // Every UNCHECKED row must name the flag that would deepen it —
+        // `canonical.rs` names `--payload` and `identity.rs` names `--fleet`
+        // in their reasons; this one must name `--deployment`, not just
+        // gesture at "who operates them" without saying how to find out.
+        assert!(
+            f.reason.contains("--deployment"),
+            "the UNCHECKED reason must name the deepening flag, got: {}",
+            f.reason
+        );
     }
 
     /// Top rung, downgraded: reference values are named, a deployment is
@@ -209,6 +242,72 @@ mod tests {
             "the tier limitation must be named in the reason, got: {}",
             f.reason
         );
+    }
+
+    /// `--explain` prints `Residual::detect` and `Residual::impact` as
+    /// user-facing text, but they used to be built with `{:?}` over
+    /// `parallax`'s enums, so "how long before you would know" printed
+    /// `Bounded(43200)` instead of readable text. `Latency::label()` (the one
+    /// canonical rendering `parallax` itself defines, also used by its own
+    /// CLI) fixes `detect`; `impact` gets an explicit, exhaustive match so a
+    /// future `Impact` variant fails to compile here rather than silently
+    /// mis-rendering.
+    #[test]
+    fn residual_detect_and_impact_render_as_human_text_not_debug() {
+        let path = std::path::Path::new("tests/fixtures/parallax/sigma2-tdx.toml");
+        let ctx = Context {
+            deployment: Some(path.to_path_buf()),
+            ..Context::default()
+        };
+        let f = AttestationField("submods.attestation.measurement").audit(
+            &record_with("INTEL_TDX", Some("https://rv.example/v.json")),
+            &ctx,
+        );
+        assert!(
+            !f.residual.is_empty(),
+            "fixture must solve to a non-empty set"
+        );
+        for r in &f.residual {
+            assert!(
+                !r.detect.contains('('),
+                "detect leaked Debug formatting: {}",
+                r.detect
+            );
+            assert_ne!(
+                r.detect, "Never",
+                "detect must use parallax's own lowercase spelling, got: {}",
+                r.detect
+            );
+        }
+
+        let pcs = f
+            .residual
+            .iter()
+            .find(|r| r.principal == "did:web:pcs.intel.com")
+            .expect("pcs principal present in this fixture's solved set");
+        assert_eq!(pcs.detect, "43200s", "got: {}", pcs.detect);
+        assert_eq!(pcs.impact, "Revocation", "got: {}", pcs.impact);
+
+        let intel = f
+            .residual
+            .iter()
+            .find(|r| r.principal == "did:web:intel.com")
+            .expect("intel principal present in this fixture's solved set");
+        assert_eq!(intel.detect, "never", "got: {}", intel.detect);
+        assert_eq!(intel.impact, "Soundness", "got: {}", intel.impact);
+    }
+
+    /// `SplitView` is the one `Impact` variant whose Rust identifier reads
+    /// badly verbatim (no space). Pinned on the enum directly rather than
+    /// only through a fixture, since no shipped fixture's solved set
+    /// currently produces it.
+    #[test]
+    fn impact_label_covers_every_variant_with_readable_text() {
+        use parallax::trust::Impact;
+        assert_eq!(impact_label(&Impact::Soundness), "Soundness");
+        assert_eq!(impact_label(&Impact::Revocation), "Revocation");
+        assert_eq!(impact_label(&Impact::SplitView), "Split View");
+        assert_eq!(impact_label(&Impact::Availability), "Availability");
     }
 
     /// The other direction, pinned positively rather than merely `!=

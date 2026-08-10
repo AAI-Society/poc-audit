@@ -79,7 +79,24 @@ fn main() -> ExitCode {
     let payload = match cli.payload.as_ref() {
         None => None,
         Some(p) => match std::fs::read_to_string(p) {
-            Ok(s) => Some(s),
+            Ok(s) => {
+                // A wrong or truncated payload file is the most likely
+                // misconfiguration of this flag, and an empty or non-JSON
+                // file used to sail through to `Verdict::Asserted` — a
+                // cleaner-looking row than supplying nothing at all. That is
+                // exactly the quiet downgrade FAILS LOUD forbids, so this is
+                // validated here, the same way `--deployment` and `--fleet`
+                // validate at load time, rather than left for `transit` to
+                // find nothing to disagree about.
+                if let Err(e) = serde_json::from_str::<serde_json::Value>(&s) {
+                    eprintln!(
+                        "error: cannot use --payload {}: not valid JSON: {e}",
+                        p.display()
+                    );
+                    return ExitCode::from(2);
+                }
+                Some(s)
+            }
             Err(e) => {
                 eprintln!("error: cannot use --payload {}: {e}", p.display());
                 return ExitCode::from(2);

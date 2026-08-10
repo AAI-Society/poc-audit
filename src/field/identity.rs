@@ -32,10 +32,16 @@ impl FieldAuditor for Identity {
     fn audit(&self, rec: &Record, ctx: &Context) -> Finding {
         let value = self.value(rec);
         if value.trim().is_empty() {
+            // This auditor DID run and DID look — there is simply nothing
+            // behind the claim. That is ASSERTED ("we looked and found
+            // nothing"), not UNCHECKED(Why::NoAuditor) ("we did not look"):
+            // the latter is reserved for fields with no auditor at all, and
+            // `--require-checked` deliberately excludes it, so mislabelling
+            // this row let an empty identifier pass the gate silently.
             return Finding {
                 field: self.0,
-                verdict: Verdict::Unchecked(Why::NoAuditor),
-                reason: "the field is empty; there is no identifier to assess".into(),
+                verdict: Verdict::Asserted,
+                reason: "the field is present but empty; there is no identifier to assess".into(),
                 residual: Vec::new(),
             };
         }
@@ -181,6 +187,25 @@ mod tests {
             assert_ne!(f.verdict.label(), "ESTABLISHED", "profile {profile:?}");
             assert_ne!(f.verdict.label(), "CANNOT HOLD", "profile {profile:?}");
         }
+    }
+
+    /// An empty `agent_id` is not "no auditor ran" — the Identity auditor DID
+    /// run and DID look, and found nothing behind the claim. The honest
+    /// verdict for "we looked and there is nothing behind this" is ASSERTED,
+    /// not UNCHECKED. This is load-bearing: `--require-checked` deliberately
+    /// ignores `Why::NoAuditor` rows (see `verdict::is_unchecked_missing_
+    /// input`), so mislabelling an empty field `NoAuditor` let it pass the
+    /// gate silently — the exact false-coverage failure mode this tool
+    /// exists to prevent.
+    #[test]
+    fn an_empty_agent_id_is_asserted_not_no_auditor() {
+        let f = Identity("poc_claims.agent_id").audit(&record_with_agent(""), &Context::default());
+        assert_eq!(f.verdict.label(), "ASSERTED", "reason was: {}", f.reason);
+        assert!(
+            f.reason.contains("empty"),
+            "the reason must say the field is present but empty, got: {}",
+            f.reason
+        );
     }
 
     /// This auditor must work with no flags at all, or a first run shows an

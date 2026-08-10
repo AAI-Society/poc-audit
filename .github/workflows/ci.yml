@@ -8,6 +8,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      # The three git dependencies live in private sibling repos, and a
+      # workflow's default GITHUB_TOKEN is scoped to THIS repository only, so
+      # it cannot read them. This needs a token with read access to the org's
+      # repos, stored as the DEPS_READ_TOKEN secret.
+      - name: authenticate to the private dependency repos
+        env:
+          DEPS_READ_TOKEN: ${{ secrets.DEPS_READ_TOKEN }}
+        run: |
+          if [ -z "${DEPS_READ_TOKEN}" ]; then
+            echo "::error::DEPS_READ_TOKEN is not set. poc-audit depends on three"
+            echo "::error::PRIVATE repos (parallax, transit, occultation) and the"
+            echo "::error::default GITHUB_TOKEN cannot read them. Create a"
+            echo "::error::fine-grained PAT with read access to the org's repos and"
+            echo "::error::add it as the DEPS_READ_TOKEN repository secret."
+            exit 1
+          fi
+          git config --global \
+            url."https://x-access-token:${DEPS_READ_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all-targets

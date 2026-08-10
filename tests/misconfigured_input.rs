@@ -80,6 +80,65 @@ fn an_unreadable_fleet_is_an_error_not_an_unchecked_row() {
     );
 }
 
+/// The most likely misconfiguration of `--payload` is not a bad path but a
+/// wrong or truncated FILE: empty, or not JSON at all. Before this fix, that
+/// silently produced `ASSERTED — "every decoder that ran agreed on this
+/// payload"` at exit 0 — a *cleaner-looking* row than supplying nothing,
+/// because transit's differential over an empty/garbage string finds no
+/// decoders disagreeing about a payload none of them could parse. That
+/// violates FAILS LOUD: a misconfigured input must be an error, never a
+/// quiet downgrade to a good-looking verdict. `--deployment` and `--fleet`
+/// already validate at load time; `--payload` must too.
+#[test]
+fn an_empty_payload_is_an_error_not_an_asserted_row() {
+    let out = bin()
+        .arg("tests/fixtures/vectors/positive/hardware-attested.json")
+        .arg("--payload")
+        .arg("tests/fixtures/payload/empty.json")
+        .output()
+        .expect("run poc-audit");
+
+    assert_eq!(out.status.code(), Some(2), "an empty --payload must exit 2");
+    assert!(
+        out.stdout.is_empty(),
+        "an empty --payload must print no report to stdout, got:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("tests/fixtures/payload/empty.json"),
+        "the error must name the path, got: {stderr}"
+    );
+}
+
+/// The other shape of the same misconfiguration: a file that has content but
+/// is not JSON (e.g. the wrong file was passed).
+#[test]
+fn a_non_json_payload_is_an_error_not_an_asserted_row() {
+    let out = bin()
+        .arg("tests/fixtures/vectors/positive/hardware-attested.json")
+        .arg("--payload")
+        .arg("tests/fixtures/payload/not-json.txt")
+        .output()
+        .expect("run poc-audit");
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "a non-JSON --payload must exit 2"
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "a non-JSON --payload must print no report to stdout, got:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("tests/fixtures/payload/not-json.txt"),
+        "the error must name the path, got: {stderr}"
+    );
+}
+
 /// `--explain` naming a field that does not exist is an error, not a silent
 /// success: it must exit 2 with the field named on stderr, and print nothing
 /// on stdout that could be mistaken for a report.

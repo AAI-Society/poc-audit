@@ -1,5 +1,24 @@
 use crate::record::Record;
-use crate::verdict::{Finding, Residual};
+use crate::verdict::{Finding, Residual, Verdict, Why};
+
+/// The WHY column's text for one finding.
+///
+/// `Why::MissingInput` carries the flag that would deepen the row, but until
+/// this function existed nothing ever read it — every UNCHECKED-by-missing-
+/// input row named its flag only because each auditor's `reason` prose
+/// happened to say so. That is a rule enforced by discipline, not structure:
+/// a new auditor (or an edit to an existing one) could drop the mention and
+/// nothing would catch it. This makes the guarantee structural: the flag is
+/// always present in the rendered text, appended if the reason did not
+/// already say it, for every `MissingInput` row without exception.
+fn why_text(f: &Finding) -> String {
+    if let Verdict::Unchecked(Why::MissingInput(flag)) = &f.verdict {
+        if !f.reason.contains(flag) {
+            return format!("{} (supply {flag})", f.reason);
+        }
+    }
+    f.reason.clone()
+}
 
 pub fn render_table(findings: &[Finding]) -> String {
     let width = findings
@@ -20,7 +39,7 @@ pub fn render_table(findings: &[Finding]) -> String {
             "{:<width$}  {:<12}  {}\n",
             f.field,
             f.verdict.label(),
-            f.reason,
+            why_text(f),
             width = width
         ));
     }
@@ -41,7 +60,7 @@ pub fn render_explain(findings: &[Finding], field: &str) -> Result<String, Strin
         )
     })?;
 
-    let mut out = format!("{}  {}\n{}\n\n", f.field, f.verdict.label(), f.reason);
+    let mut out = format!("{}  {}\n{}\n\n", f.field, f.verdict.label(), why_text(f));
     if f.residual.is_empty() {
         out.push_str("There is no residual trust set behind this finding.\n");
         return Ok(out);
@@ -125,6 +144,46 @@ mod tests {
                 impact: "Soundness".into(),
             }],
         }
+    }
+
+    /// `Why::MissingInput` carries the flag that would deepen a row, and
+    /// nothing used to read it: the guarantee that every UNCHECKED-by-missing-
+    /// input row names its flag rested entirely on each auditor's author
+    /// remembering to mention it in prose. `render_table` now enforces it
+    /// structurally: even a reason that forgets the flag gets it appended, so
+    /// the rule cannot be silently dropped by a future auditor's reason text.
+    #[test]
+    fn render_table_names_the_missing_flag_even_if_the_reason_forgot_to() {
+        let findings = vec![Finding {
+            field: "poc_claims.canonical_snapshot_hash",
+            verdict: Verdict::Unchecked(Why::MissingInput("--payload")),
+            reason: "the digest is asserted but nothing here recomputes it".into(),
+            residual: Vec::new(),
+        }];
+        let table = render_table(&findings);
+        assert!(
+            table.contains("--payload"),
+            "the flag that would deepen this row must appear in the rendered \
+             output, structurally, even though the reason text omitted it: {table}"
+        );
+    }
+
+    /// The common case — a reason that already names its flag — must not end
+    /// up with the flag printed twice.
+    #[test]
+    fn render_table_does_not_double_the_flag_when_the_reason_already_names_it() {
+        let findings = vec![Finding {
+            field: "poc_claims.canonical_snapshot_hash",
+            verdict: Verdict::Unchecked(Why::MissingInput("--payload")),
+            reason: "the record carries one digest; supply --payload to check it".into(),
+            residual: Vec::new(),
+        }];
+        let table = render_table(&findings);
+        assert_eq!(
+            table.matches("--payload").count(),
+            1,
+            "the flag must appear once, not doubled by the structural guard: {table}"
+        );
     }
 
     #[test]
