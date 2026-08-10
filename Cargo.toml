@@ -1,0 +1,21 @@
+[package]
+name = "poc-audit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+description = "What actually backs each claim in a Proof-of-Control evidence record"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+
+parallax    = { git = "https://github.com/Task-force-for-AI-agents-in-Healthcare/parallax.git",    rev = "efd1b64" }
+transit     = { git = "https://github.com/Task-force-for-AI-agents-in-Healthcare/transit.git",     rev = "3e10e13" }
+occultation = { git = "https://github.com/Task-force-for-AI-agents-in-Healthcare/occultation.git", rev = "d1cc941" }
+
+[[bin]]
+name = "poc-audit"
+path = "src/main.rs"
