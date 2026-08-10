@@ -13,6 +13,16 @@ jobs:
       # workflow's default GITHUB_TOKEN is scoped to THIS repository only, so
       # it cannot read them. This needs a token with read access to the org's
       # repos, stored as the DEPS_READ_TOKEN secret.
+      #
+      # The insteadOf rewrite below only takes effect because
+      # .cargo/config.toml sets `net.git-fetch-with-cli = true` — cargo's
+      # default libgit2 transport ignores git's url.*.insteadOf rewriting
+      # entirely, so it would silently keep trying the unauthenticated
+      # https://github.com/... URL and fail with the opaque "could not read
+      # Username" error this step exists to prevent. That coupling is
+      # load-bearing: deleting `git-fetch-with-cli = true` from
+      # .cargo/config.toml silently breaks this authentication fix, and
+      # nothing here would catch it happening.
       - name: authenticate to the private dependency repos
         env:
           DEPS_READ_TOKEN: ${{ secrets.DEPS_READ_TOKEN }}
@@ -65,6 +75,13 @@ jobs:
       # a duplicate JSON key) rather than ways that merely fail a residual
       # check, so this tool genuinely cannot audit them and must say so with
       # exit 2, not report DIVERGES/CANNOT HOLD on a record it never parsed.
+      #
+      # `[ "$code" -ne 2 ]` alone is a vacuous check: a renamed or deleted
+      # fixture also makes `cargo run` exit 2 (an unreadable path), so the
+      # step would report success identically whether the record was
+      # correctly judged unauditable or simply wasn't found. Each path is
+      # therefore verified to exist BEFORE being run, the same guard the
+      # positive-vector step above applies via its own glob-emptiness check.
       - name: exit 2 is reachable on committed data, not only by reasoning
         shell: bash
         run: |
@@ -74,6 +91,11 @@ jobs:
             tests/fixtures/vectors/negative/float-timestamp.json \
             tests/fixtures/vectors/negative/duplicate-key.json \
           ; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f does not exist; this step would prove nothing (a missing"
+              echo "::error::file also exits 2, vacuously satisfying the check below)"
+              exit 1
+            fi
             echo "--- $f"
             set +e
             cargo run --quiet -- "$f"

@@ -1,5 +1,13 @@
 # poc-audit depends on three git repositories (parallax, transit, occultation;
-# see Cargo.toml) that are genuinely public and anonymously cloneable — but
+# see Cargo.toml) that are PRIVATE sibling repos in this org — NOT public. An
+# earlier version of this comment claimed they were "genuinely public and
+# anonymously cloneable"; that claim came from a check that ran with cached
+# local credentials already present, which proves nothing about anonymous
+# access and was simply wrong. README.md's "Building" section and
+# .github/workflows/ci.yml's authentication step both correctly call them
+# private and require a DEPS_READ_TOKEN with read access to the org's repos —
+# this file must not contradict them.
+#
 # cargo's built-in libgit2 transport fails to authenticate against them with:
 #
 #   error: failed to authenticate when downloading repository
@@ -11,5 +19,15 @@
 # `git` binary instead of libgit2 fetches all three cleanly. Without this, a
 # cold cache — exactly what a fresh CI runner has — fails `cargo build`/`cargo
 # test` on the very first run, with no local warm cache to mask the problem.
+#
+# This line is ALSO load-bearing for a second, separate reason: CI's
+# `url."https://x-access-token:...".insteadOf "https://github.com/"` rewrite
+# (see .github/workflows/ci.yml) is honored by git's own URL-rewriting
+# machinery, which only the CLI transport (`git-fetch-with-cli = true`)
+# invokes — cargo's default libgit2 transport ignores `insteadOf` entirely.
+# Deleting this line would therefore silently break CI's authentication fix
+# too, not only the local cold-cache case, and nothing would flag it until
+# the next cold-cache CI run failed with the opaque "could not read
+# Username" error that fix exists to prevent.
 [net]
 git-fetch-with-cli = true
