@@ -43,8 +43,8 @@ pub const ACCOUNTED: &[(&str, Coverage)] = &[
     ("poc_claims.verdict",            Coverage::Unaudited("enumerated value, checked by validate.py")),
     ("poc_claims.alg",                Coverage::Unaudited("signature checking is validate.py's semantic layer")),
 
-    ("submods.attestation.platform",    Coverage::Unaudited("attestation auditor arrives in Task 3")),
-    ("submods.attestation.measurement", Coverage::Unaudited("attestation auditor arrives in Task 3")),
+    ("submods.attestation.platform",    Coverage::Audited),
+    ("submods.attestation.measurement", Coverage::Audited),
 ];
 
 /// Every auditor. Later tasks push onto this list.
@@ -53,6 +53,8 @@ pub fn auditors() -> Vec<Box<dyn FieldAuditor>> {
         Box::new(Chain("poc_claims.chain_head")),
         Box::new(Chain("poc_claims.merkle_root")),
         Box::new(Chain("poc_claims.step_index")),
+        Box::new(crate::field::attestation::AttestationField("submods.attestation.platform")),
+        Box::new(crate::field::attestation::AttestationField("submods.attestation.measurement")),
     ]
 }
 

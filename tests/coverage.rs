@@ -45,6 +45,25 @@ fn every_required_field_is_accounted_for() {
         }
     }
 
+    // And the other direction: a field an auditor claims but that ACCOUNTED
+    // still marks Unaudited is not caught by the panic above (`run` just
+    // never calls the auditor), so it needs its own check. This is the silent
+    // half of the mismatch: a real, working auditor whose row quietly stays
+    // UNCHECKED with a stale reason -- exactly the "clean-looking report with
+    // fewer rows" this tool exists to prevent, only here it is the registry's
+    // own bookkeeping doing it rather than a misconfigured input.
+    for field in &claimed {
+        let coverage = poc_audit::registry::ACCOUNTED
+            .iter()
+            .find(|(f, _)| f == field)
+            .map(|(_, c)| c);
+        assert!(
+            matches!(coverage, Some(poc_audit::registry::Coverage::Audited)),
+            "{field} has an auditor claiming it but ACCOUNTED does not mark it \
+             Coverage::Audited; its row would silently stay UNCHECKED"
+        );
+    }
+
     let unaccounted: Vec<&String> = required.difference(&accounted).collect();
     assert!(
         unaccounted.is_empty(),
@@ -60,10 +79,15 @@ fn every_required_field_is_accounted_for() {
     );
 }
 
-/// Task 2's deliverable is a complete tool that honestly reports nothing, so
-/// running it end to end has to work. Without this, `registry::run`'s
-/// deliberate panic on an unclaimed Audited field is invisible until someone
-/// runs the CLI by hand.
+/// The whole tool has to work end to end, not just its parts in isolation.
+/// Without this, `registry::run`'s deliberate panic on an unclaimed Audited
+/// field is invisible until someone runs the CLI by hand.
+///
+/// This no longer asserts every row is `UNCHECKED`: that was only true at
+/// Task 2's baseline, before any real auditor existed. From Task 3 onward
+/// some fields are genuinely audited, so the invariant this test can still
+/// hold unconditionally is narrower — every accounted field produces exactly
+/// one row, and the binary never panics producing them.
 #[test]
 fn the_binary_audits_a_real_record_without_panicking() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_poc-audit"))
@@ -81,9 +105,14 @@ fn the_binary_audits_a_real_record_without_panicking() {
         !stderr.contains("panicked"),
         "the binary panicked on a valid record:\n{stderr}"
     );
-    assert_eq!(
-        stdout.lines().filter(|l| l.contains("UNCHECKED")).count(),
-        poc_audit::registry::ACCOUNTED.len(),
-        "every accounted field must produce a row at this stage:\n{stdout}"
-    );
+
+    let row_fields: Vec<&str> =
+        stdout.lines().filter_map(|l| l.split_whitespace().next()).collect();
+    for (field, _) in poc_audit::registry::ACCOUNTED {
+        assert_eq!(
+            row_fields.iter().filter(|f| *f == field).count(),
+            1,
+            "expected exactly one row for {field}:\n{stdout}"
+        );
+    }
 }

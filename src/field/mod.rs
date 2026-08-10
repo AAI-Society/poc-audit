@@ -1,3 +1,4 @@
+pub mod attestation;
 pub mod chain;
 
 use crate::record::Record;
