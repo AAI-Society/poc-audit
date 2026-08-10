@@ -23,20 +23,40 @@ struct Cli {
     /// recomputed (its hash construction is not pinned by the standard) but
     /// a repeated chain_head is still reported, since that is impossible
     /// under any construction.
-    #[arg(long, num_args = 2.., value_name = "FILE", conflicts_with = "record")]
+    // `conflicts_with = "chain"` on each deepening flag below is not
+    // decoration: without it, clap would accept e.g. `--chain a b
+    // --deployment /nope.toml` and the chain branch in `main` returns before
+    // the single-record path's strict pre-checks ever run, so a nonexistent
+    // or malformed file for any of these would be silently swallowed
+    // instead of failing loud — a quiet no-op is exactly what FAILS LOUD
+    // forbids. Rejecting the combination at the argument-parsing level means
+    // there is no code path left where that silent swallowing could happen.
+    #[arg(
+        long,
+        num_args = 2..,
+        value_name = "FILE",
+        conflicts_with = "record",
+        conflicts_with = "deployment",
+        conflicts_with = "payload",
+        conflicts_with = "fleet",
+        conflicts_with = "reference_values"
+    )]
     chain: Option<Vec<PathBuf>>,
 
     /// A parallax deployment description, to establish who operates the
-    /// reference values.
+    /// reference values. Not usable with --chain: chain mode audits
+    /// cross-record continuity, not this field.
     #[arg(long)]
     deployment: Option<PathBuf>,
 
     /// The request bytes the record's canonical_snapshot_hash covers. No
-    /// decoder configuration is needed: transit runs every model it can find.
+    /// decoder configuration is needed: transit runs every model it can
+    /// find. Not usable with --chain.
     #[arg(long)]
     payload: Option<PathBuf>,
 
-    /// An occultation fleet description, for the anonymity-set size.
+    /// An occultation fleet description, for the anonymity-set size. Not
+    /// usable with --chain.
     #[arg(long)]
     fleet: Option<PathBuf>,
 
@@ -44,7 +64,7 @@ struct Cli {
     /// submods.attestation.measurement. Not the record's own
     /// reference_values_uri — that is a URI in the record and is never
     /// fetched; this is what YOU assert you accept. See the README for the
-    /// file format.
+    /// file format. Not usable with --chain.
     #[arg(long, value_name = "FILE")]
     reference_values: Option<PathBuf>,
 
@@ -59,9 +79,11 @@ struct Cli {
     explain: Option<String>,
 
     /// Fail on any UNCHECKED row a deepening flag could resolve (a missing
-    /// --deployment, --payload, or --fleet) — not on fields this tool does
-    /// not audit at all. Changes only the exit code; the report is
-    /// byte-identical.
+    /// --deployment or --payload — the only two flags whose absence ever
+    /// produces Why::MissingInput; see the README's "Exit codes" section
+    /// for why --fleet and --reference-values are not on this list) — not
+    /// on fields this tool does not audit at all. Changes only the exit
+    /// code; the report is byte-identical.
     #[arg(long)]
     require_checked: bool,
 }
@@ -73,9 +95,14 @@ fn main() -> ExitCode {
     // (step_index, tree_size, agent_id), a different question from the
     // single-record table below, and it does not use --deployment,
     // --payload, --fleet, --reference-values, or --profile — none of those
-    // deepen a cross-record fact. clap's conflicts_with already rejects
-    // --chain together with a positional `record`, so this branch never
-    // needs to reconcile the two.
+    // deepen a cross-record fact. clap's conflicts_with rejects --chain
+    // together with a positional `record` AND with each of those four
+    // deepening flags, so this branch never needs to reconcile them: a
+    // nonexistent or malformed file for any of them is now a clap-level
+    // error before this function body ever runs, not a silent no-op (see
+    // I4 in the review — the chain branch used to return before the
+    // single-record path's strict pre-checks, swallowing every one of
+    // them).
     if let Some(paths) = cli.chain.as_ref() {
         let records = match poc_audit::chain::load_chain(paths) {
             Ok(r) => r,

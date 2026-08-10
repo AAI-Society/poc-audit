@@ -127,6 +127,42 @@ fn a_shrinking_tree_size_diverges_and_exits_1() {
     assert_eq!(out.status.code(), Some(1), "stdout:\n{stdout}");
 }
 
+/// I4: `--chain` does not read `--deployment`, `--payload`, `--fleet`, or
+/// `--reference-values` — none of them deepen a cross-record fact — but the
+/// chain branch in `main.rs` used to return before the single-record path's
+/// strict pre-checks, so a nonexistent file for any of them was silently
+/// swallowed instead of failing loud the way it does in single-record mode.
+/// clap must reject the combination outright via `conflicts_with`, exit 2,
+/// for each flag independently.
+#[test]
+fn chain_rejects_every_deepening_flag_even_with_a_nonexistent_file() {
+    for (flag, path) in [
+        ("--deployment", "/nope.toml"),
+        ("--payload", "/nope.json"),
+        ("--fleet", "/nope.toml"),
+        ("--reference-values", "/nope.json"),
+    ] {
+        let out = bin()
+            .arg("--chain")
+            .args(chain("valid", 2))
+            .arg(flag)
+            .arg(path)
+            .output()
+            .expect("run poc-audit");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{flag} together with --chain must be a clap error, stdout:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "{flag} together with --chain must print no table, got:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+    }
+}
+
 /// `--chain` and the positional record are mutually exclusive; clap must
 /// reject supplying both rather than silently picking one.
 #[test]
