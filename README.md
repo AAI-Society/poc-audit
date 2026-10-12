@@ -117,3 +117,7 @@ the exit code; the report is byte-identical.
 ## Design
 
 [`2026-08-09-poc-audit-design.md`](https://github.com/Task-force-for-AI-agents-in-Healthcare/poc-research-roadmap/blob/master/docs/superpowers/specs/2026-08-09-poc-audit-design.md)
+
+## Licence
+
+Apache-2.0. See [LICENSE](LICENSE).
